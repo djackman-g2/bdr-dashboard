@@ -4,11 +4,14 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "linkedin:login": "node scripts/linkedin-login.js",
+    "linkedin:check": "node scripts/linkedin-session-check.js"
   },
   "dependencies": {
     "chokidar": "^4.0.3",
     "express": "^4.21.2",
-    "node-cron": "^4.6.0"
+    "node-cron": "^4.6.0",
+    "playwright-core": "^1.61.1"
   }
 }
