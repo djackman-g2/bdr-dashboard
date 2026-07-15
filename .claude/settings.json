@@ -1,0 +1,43 @@
+{
+  "_comment": "Headless pipeline allowlist (Phase 3). Spawned `claude -p` runs get exactly these tools — no blanket permission-skipping. Light runs additionally get --disallowedTools mcp__playwright__* from the server.",
+  "permissions": {
+    "allow": [
+      "mcp__claude_ai_Salesforce_Native_MCP_Reads_PROD__getUserInfo",
+      "mcp__claude_ai_Salesforce_Native_MCP_Reads_PROD__soqlQuery",
+      "mcp__claude_ai_Salesforce_Native_MCP_Reads_PROD__getObjectSchema",
+      "mcp__claude_ai_Salesforce_Native_MCP_Reads_PROD__getRelatedRecords",
+      "mcp__claude_ai_Salesforce_Native_MCP_Reads_PROD__find",
+      "mcp__claude_ai_ZoomInfo__lookup",
+      "mcp__claude_ai_ZoomInfo__search_companies",
+      "mcp__claude_ai_ZoomInfo__account_research",
+      "mcp__claude_ai_ZoomInfo__search_contacts",
+      "mcp__claude_ai_ZoomInfo__enrich_contacts",
+      "mcp__claude_ai_ZoomInfo__get_recommended_contacts",
+      "mcp__claude_ai_ZoomInfo__search_intent",
+      "mcp__claude_ai_ZoomInfo__enrich_scoops",
+      "mcp__claude_ai_ZoomInfo__search_scoops",
+      "mcp__claude_ai_G2_MCP_Server__list_my_products",
+      "mcp__claude_ai_G2_MCP_Server__show_product",
+      "mcp__claude_ai_G2_MCP_Server__show_vendor",
+      "mcp__claude_ai_G2_MCP_Server__browse_buyer_intent",
+      "mcp__claude_ai_G2_MCP_Server__browse_product_buyer_intent",
+      "mcp__claude_ai_Gong_MCP_PROD__ask_account",
+      "mcp__claude_ai_Gong_MCP_PROD__ask_deal",
+      "mcp__claude_ai_Gong_MCP_PROD__generate_brief",
+      "mcp__playwright",
+      "WebSearch",
+      "WebFetch",
+      "Edit(data/**)",
+      "Bash(mv data/*)",
+      "Bash(npx --yes -p ajv-cli@5 -p ajv-formats ajv validate*)",
+      "Bash(curl -s -X POST http://127.0.0.1:4680/api/refresh*)"
+    ],
+    "deny": [
+      "Bash(rm *)",
+      "Bash(rm -*)",
+      "mcp__claude_ai_Salesforce_MCP_Writes",
+      "mcp__claude_ai_Salesforce_MCP_Dev_Sandbox",
+      "mcp__claude_ai_Sandbox_SF_MCP_Write_Controlled"
+    ]
+  }
+}

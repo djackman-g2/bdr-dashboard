@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * G2 "Elevate" design tokens, extracted from g2.com production CSS
+ * (nessy_app + elevate-assets, captured 2026-07-15).
+ */
+@theme {
+  --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Elevate neutrals mapped onto the zinc scale the components already use.
+     Dark end is G2's indigo-black surface ramp, not gray. */
+  --color-zinc-50: #fafafa;
+  --color-zinc-100: #f5f4fb;
+  --color-zinc-200: #dfdfe2;
+  --color-zinc-300: #cacace;
+  --color-zinc-400: #b0afb6;
+  --color-zinc-500: #6f6d78;
+  --color-zinc-600: #4c4b53;
+  --color-zinc-700: #4a4570;
+  --color-zinc-800: #2a2740;
+  --color-zinc-900: #16132b;
+  --color-zinc-950: #0e0c1a;
+
+  /* G2 brand red (also Elevate's critical hue) */
+  --color-brand-50: #fff6f5;
+  --color-brand-100: #ffd7d1;
+  --color-brand-300: #ffa394;
+  --color-brand-500: #ff492c;
+  --color-brand-600: #df1f00;
+  --color-brand-700: #b21800;
+  --color-brand-900: #610d00;
+  --color-brand-950: #2e0600;
+
+  /* Elevate primary (purple) */
+  --color-primary-50: #f5f4fb;
+  --color-primary-100: #f2f0f9;
+  --color-primary-200: #dedaf1;
+  --color-primary-300: #c3bde5;
+  --color-primary-400: #a89ee8;
+  --color-primary-500: #8a7ec8;
+  --color-primary-600: #5746b2;
+  --color-primary-700: #45388f;
+  --color-primary-800: #342a6a;
+  --color-primary-950: #221f3d;
+
+  /* Elevate semantic hues */
+  --color-success-100: #d0f6f1;
+  --color-success-200: #a9efe5;
+  --color-success-300: #5be1cf;
+  --color-success-500: #1fa896;
+  --color-success-700: #0f5249;
+  --color-success-900: #072723;
+
+  --color-warning-50: #fff9e5;
+  --color-warning-300: #ffd747;
+  --color-warning-500: #ffc800;
+  --color-warning-700: #665000;
+
+  --color-info-100: #dbecff;
+  --color-info-400: #66aeff;
+  --color-info-500: #0073f5;
+  --color-info-600: #005bc2;
+  --color-info-900: #002b5c;
+
+  --color-star: #fcbb00;
+}
+
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+  /* Meta text uses bare `text-zinc-500` in both modes; Elevate's dark-mode
+     "nonessential" text is a lighter lavender-gray than its light value. */
+  --color-zinc-500: #827ea5;
+}
+
+body {
+  @apply bg-zinc-50 text-zinc-900 antialiased dark:bg-zinc-950 dark:text-zinc-100;
+}

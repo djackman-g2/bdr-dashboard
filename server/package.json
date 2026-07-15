@@ -1,0 +1,14 @@
+{
+  "name": "bdr-dashboard-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.3",
+    "express": "^4.21.2",
+    "node-cron": "^4.6.0"
+  }
+}

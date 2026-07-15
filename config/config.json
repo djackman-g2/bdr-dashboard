@@ -1,0 +1,50 @@
+{
+  "salesforce": {
+    "bdr_user_id": "005Nw000003GH6PIAW",
+    "account_universe_where": "BDR__c = '005Nw000003GH6PIAW'",
+    "account_fields": [
+      "Id",
+      "Name",
+      "Website",
+      "Industry",
+      "NumberOfEmployees",
+      "BillingCity",
+      "BillingState",
+      "BillingCountry",
+      "BDR_Notes__c"
+    ],
+    "notes": "Universe is the custom BDR__c lookup, NOT OwnerId (returns 0). LastActivityDate contains future dates (2029-2036) — filter out any date > today before using for recency."
+  },
+  "refresh": {
+    "nightly_light_cron": "30 5 * * *",
+    "queue_concurrency": 1,
+    "deep_refresh_daily_cap": 10,
+    "playwright_in_scheduled_runs": false,
+    "job_timeout_minutes": { "light": 90, "deep": 45 }
+  },
+  "news": {
+    "use_apify": false,
+    "lookback_days": 365,
+    "max_items_per_account": 8
+  },
+  "zoominfo": {
+    "log_every_paid_call": true,
+    "paid_tools": ["account_research", "enrich_contacts", "contact_research", "enrich_companies"]
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 4680,
+    "webhooks": {
+      "_comment": "n8n hooks (Phase 4/5). Set to a URL to enable; null = off. Server POSTs the run summary JSON, fire-and-forget.",
+      "run_finished": null,
+      "run_failed": null
+    }
+  },
+  "paths": {
+    "accounts_dir": "data/accounts",
+    "index": "data/index.json",
+    "meta": "data/meta.json",
+    "schema": "schema/account.schema.json",
+    "logs_dir": "logs"
+  }
+}

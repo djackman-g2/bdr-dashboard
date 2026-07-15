@@ -1,0 +1,346 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "account.schema.json",
+  "title": "BDR account research record",
+  "description": "One file per account at data/accounts/{domain-slug}.json. Every dated claim carries a source URL; every metric that can disagree across sources is a verifiedValue.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "domain",
+    "slug",
+    "name",
+    "refreshed_at",
+    "refresh_mode",
+    "confidence",
+    "salesforce",
+    "firmographics",
+    "signals",
+    "news",
+    "icp_contacts",
+    "sources_missing",
+    "discrepancies"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "domain": {
+      "type": "string",
+      "description": "Canonical domain: lowercase, no scheme, no www. Primary key for all enrichment.",
+      "pattern": "^[a-z0-9.-]+\\.[a-z]{2,}$"
+    },
+    "slug": {
+      "type": "string",
+      "description": "Filename-safe form of domain (dots -> dashes).",
+      "pattern": "^[a-z0-9-]+$"
+    },
+    "name": { "type": "string" },
+    "status": {
+      "enum": ["active", "archived"],
+      "default": "active",
+      "description": "Accounts removed from the BDR universe are archived, never deleted."
+    },
+    "refreshed_at": { "type": "string", "format": "date-time" },
+    "last_deep_refresh_at": { "type": ["string", "null"], "format": "date-time" },
+    "refresh_mode": { "enum": ["light", "deep"] },
+    "confidence": {
+      "enum": ["high", "medium", "low"],
+      "description": "Overall record confidence. Lower it when sources_missing is non-empty or key facts are unverified_estimate."
+    },
+    "salesforce": {
+      "type": "object",
+      "required": ["account_id", "synced_at"],
+      "additionalProperties": true,
+      "properties": {
+        "account_id": { "type": "string" },
+        "synced_at": { "type": "string", "format": "date-time" },
+        "name": { "type": "string" },
+        "website": { "type": ["string", "null"] },
+        "industry": { "type": ["string", "null"] },
+        "number_of_employees": { "type": ["integer", "null"] },
+        "billing_city": { "type": ["string", "null"] },
+        "billing_state": { "type": ["string", "null"] },
+        "billing_country": { "type": ["string", "null"] },
+        "bdr_notes": { "type": ["string", "null"] },
+        "open_opportunities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name", "stage"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "stage": { "type": "string" },
+              "amount": { "type": ["number", "null"] },
+              "close_date": { "type": ["string", "null"] },
+              "owner": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "crm_history_notes": {
+          "type": ["string", "null"],
+          "description": "Short narrative of past CRM touches. NOT proof of current employment for any contact."
+        }
+      }
+    },
+    "firmographics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": ["string", "null"] },
+        "employees": { "$ref": "#/definitions/verifiedValue" },
+        "revenue_usd": { "$ref": "#/definitions/verifiedValue" },
+        "founded_year": { "type": ["integer", "null"] },
+        "hq": { "type": ["string", "null"] },
+        "ownership": { "type": ["string", "null"], "description": "e.g. private, PE-backed, public (ticker)" },
+        "zoominfo_company_id": { "type": ["string", "null"] },
+        "linkedin_url": { "type": ["string", "null"] },
+        "categories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "g2": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor_slug": { "type": ["string", "null"] },
+        "products": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["slug"],
+            "properties": {
+              "slug": { "type": "string" },
+              "name": { "type": "string" },
+              "categories": { "type": "array", "items": { "type": "string" } },
+              "rating": { "type": ["number", "null"] },
+              "review_count": { "type": ["integer", "null"] },
+              "retrieved_at": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
+        "presence_summary": { "type": ["string", "null"], "description": "How this vendor shows up on G2 today — the wedge for outreach." }
+      }
+    },
+    "signals": {
+      "type": "array",
+      "description": "Timestamped events only — never aggregates. UI filters 7/30/90/custom client-side.",
+      "items": { "$ref": "#/definitions/signalEvent" }
+    },
+    "news": {
+      "type": "array",
+      "description": "Dated news items. published_at must be read from the source page itself, never a search snippet.",
+      "items": { "$ref": "#/definitions/newsItem" }
+    },
+    "hiring": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "careers_url": { "type": ["string", "null"] },
+        "open_roles_total": { "type": ["integer", "null"] },
+        "role_mix": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["function", "count"],
+            "properties": {
+              "function": { "type": "string" },
+              "count": { "type": "integer" }
+            }
+          }
+        },
+        "direction": { "enum": ["growing", "flat", "shrinking", "unknown"] },
+        "notes": { "type": ["string", "null"] },
+        "as_of": { "type": ["string", "null"], "format": "date-time" },
+        "source": { "$ref": "#/definitions/sourceRef" }
+      }
+    },
+    "icp_contacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "title", "verification"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "title": { "type": "string" },
+          "seniority": { "type": ["string", "null"] },
+          "department": { "type": ["string", "null"] },
+          "location": { "type": ["string", "null"] },
+          "linkedin_url": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"] },
+          "phone": { "type": ["string", "null"] },
+          "salesforce_contact_id": { "type": ["string", "null"] },
+          "why_icp": { "type": ["string", "null"] },
+          "sources": { "type": "array", "items": { "$ref": "#/definitions/sourceRef" } },
+          "verification": {
+            "type": "object",
+            "required": ["status", "method"],
+            "additionalProperties": false,
+            "properties": {
+              "status": {
+                "enum": ["verified", "unconfirmed"],
+                "description": "verified requires independent confirmation (LinkedIn via Playwright, or ZoomInfo enrich_contacts with recent as-of). CRM LastActivityDate is NEVER sufficient. unconfirmed renders a 'verify before outreach' badge."
+              },
+              "method": { "enum": ["linkedin_playwright", "zoominfo_recent_enrich", "company_website", "none"] },
+              "verified_at": { "type": ["string", "null"], "format": "date-time" },
+              "note": { "type": ["string", "null"] }
+            }
+          }
+        }
+      }
+    },
+    "gong": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "available": { "type": "boolean" },
+        "summary": { "type": ["string", "null"] },
+        "last_call_at": { "type": ["string", "null"], "format": "date-time" },
+        "retrieved_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "g2_buyer_intent": { "type": ["string", "null"], "description": "Raw finding or null. Seller-scoped tools may not work under this login — record attempts in sources_missing." },
+        "zoominfo_intent": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/signalEvent" }
+        }
+      }
+    },
+    "messaging": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "angles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["angle", "grounded_in"],
+            "properties": {
+              "angle": { "type": "string" },
+              "grounded_in": { "type": "string", "description": "Which signal/news/fact in this record supports the angle." }
+            }
+          }
+        },
+        "openers": { "type": "array", "items": { "type": "string" } },
+        "things_to_probe": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Research is not qualification — signals stored as questions to probe, not verdicts."
+        },
+        "generated_at": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "sources_missing": {
+      "type": "array",
+      "description": "Every connected source that was ATTEMPTED and unavailable/empty. Never silently skip a source.",
+      "items": {
+        "type": "object",
+        "required": ["source", "reason", "attempted_at"],
+        "properties": {
+          "source": { "type": "string" },
+          "reason": { "type": "string" },
+          "attempted_at": { "type": "string", "format": "date-time" },
+          "kind": {
+            "type": "string",
+            "enum": ["deferred_by_design", "attempted_failed"],
+            "description": "deferred_by_design = intentionally skipped per policy (LinkedIn pre-Phase 5, ZoomInfo intent/signals cost policy) — UI renders quietly. attempted_failed = genuinely tried and unavailable (outage, 404, auth) — UI renders as warning. Absent = treated as attempted_failed."
+          }
+        }
+      }
+    },
+    "discrepancies": {
+      "type": "array",
+      "description": "Enrichment vs live-source disagreements. Trust the live source; record here. Never average or silently pick.",
+      "items": {
+        "type": "object",
+        "required": ["field", "values", "resolution"],
+        "properties": {
+          "field": { "type": "string" },
+          "values": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "object",
+              "required": ["source", "value"],
+              "properties": {
+                "source": { "type": "string" },
+                "value": {},
+                "as_of": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "resolution": { "type": "string" }
+        }
+      }
+    },
+    "corrections_applied": {
+      "type": "array",
+      "description": "Known account corrections from CLAUDE.md that overrode enrichment data.",
+      "items": { "type": "string" }
+    }
+  },
+  "definitions": {
+    "sourceRef": {
+      "type": "object",
+      "required": ["source"],
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string", "description": "e.g. zoominfo, linkedin, salesforce, company_website, g2, websearch+webfetch" },
+        "url": { "type": ["string", "null"] },
+        "retrieved_at": { "type": ["string", "null"], "format": "date-time" },
+        "note": { "type": ["string", "null"] }
+      }
+    },
+    "verifiedValue": {
+      "type": "object",
+      "required": ["value", "status", "sources"],
+      "additionalProperties": false,
+      "description": "A metric that must be cross-checked across sources. status=unverified_estimate renders a warning badge in the UI.",
+      "properties": {
+        "value": { "type": ["number", "string", "null"] },
+        "display": { "type": ["string", "null"], "description": "Human form, e.g. '250-300 (LinkedIn range)'" },
+        "status": { "enum": ["verified", "unverified_estimate", "unknown"] },
+        "sources": { "type": "array", "items": { "$ref": "#/definitions/sourceRef" } },
+        "as_of": { "type": ["string", "null"], "format": "date-time" }
+      }
+    },
+    "signalEvent": {
+      "type": "object",
+      "required": ["date", "type", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "date": { "type": "string", "description": "ISO date the event occurred (not when we found it)." },
+        "type": {
+          "type": "string",
+          "description": "e.g. funding, leadership_change, product_launch, layoffs, acquisition, hiring, intent_surge, award, partnership, scoop"
+        },
+        "summary": { "type": "string" },
+        "source_name": { "type": ["string", "null"] },
+        "source_url": { "type": ["string", "null"] },
+        "retrieved_at": { "type": ["string", "null"], "format": "date-time" },
+        "probe": { "type": ["string", "null"], "description": "Question this signal raises for a call — signals are things to probe, not verdicts." }
+      }
+    },
+    "newsItem": {
+      "type": "object",
+      "required": ["title", "url", "published_at", "publisher", "summary", "date_confirmed_on_page"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string" },
+        "url": { "type": "string" },
+        "published_at": { "type": "string", "description": "ISO date read from the source page itself." },
+        "publisher": { "type": "string" },
+        "summary": { "type": "string" },
+        "date_confirmed_on_page": {
+          "type": "boolean",
+          "description": "True only if published_at was read from the fetched page, not a search snippet. Items failing this must not claim a date."
+        },
+        "retrieved_at": { "type": ["string", "null"], "format": "date-time" },
+        "relevance": { "type": ["string", "null"], "description": "Why a BDR cares." }
+      }
+    }
+  }
+}

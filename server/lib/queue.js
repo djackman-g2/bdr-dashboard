@@ -1,0 +1,229 @@
+// Job queue for headless research runs. Exactly ONE pipeline runs at a time
+// (config.refresh.queue_concurrency is documented but the implementation is
+// deliberately a single slot — the cap guarantee lives here and only here).
+// Queue state persists in data/meta.json so a server restart resumes work.
+import { spawn } from 'node:child_process'
+import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
+import fsp from 'node:fs/promises'
+import path from 'node:path'
+import crypto from 'node:crypto'
+import { config, paths } from './config.js'
+import { readMeta, updateMeta } from './meta.js'
+
+export const jobEvents = new EventEmitter()
+
+let running = null // { job, child, timer }
+
+const nowIso = () => new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
+const localDay = (iso) => new Date(iso).toLocaleDateString('en-CA') // YYYY-MM-DD
+
+function emit(type, job, extra = {}) {
+  jobEvents.emit('job', { type, job: publicJob(job), ...extra })
+}
+
+export function publicJob(job) {
+  if (!job) return null
+  const { id, query, mode, trigger, status, enqueued_at, started_at } = job
+  return { id, query, mode, trigger, status, enqueued_at, started_at }
+}
+
+export async function queueSnapshot() {
+  const meta = await readMeta()
+  return {
+    running: publicJob(running?.job ?? null),
+    queue: (meta.job_queue ?? []).filter((j) => j.status === 'queued').map(publicJob),
+  }
+}
+
+// Deep refreshes consume ZoomInfo credits + tokens; cap per local day.
+export async function deepCapStatus() {
+  const meta = await readMeta()
+  const today = localDay(nowIso())
+  const ranToday = (meta.runs ?? []).filter(
+    (r) => r.mode === 'deep' && r.started && localDay(r.started) === today
+  ).length
+  const pending = (meta.job_queue ?? []).filter((j) => j.mode === 'deep').length
+  return { cap: config.refresh.deep_refresh_daily_cap, used: ranToday, pending, date: today }
+}
+
+export async function enqueue({ query, mode, trigger }) {
+  const meta = await readMeta()
+  const dupe = (meta.job_queue ?? []).find((j) => j.query === query && j.mode === mode)
+  if (dupe) return { error: 'duplicate', status: 409, job: publicJob(dupe) }
+
+  if (mode === 'deep') {
+    const cap = await deepCapStatus()
+    if (cap.used + cap.pending >= cap.cap) {
+      return { error: 'deep_cap_reached', status: 429, cap }
+    }
+  }
+
+  const job = {
+    id: `job-${nowIso().slice(0, 10)}-${crypto.randomBytes(3).toString('hex')}`,
+    query,
+    mode,
+    trigger,
+    status: 'queued',
+    enqueued_at: nowIso(),
+  }
+  await updateMeta((m) => {
+    m.job_queue = [...(m.job_queue ?? []), job]
+  })
+  emit('queued', job)
+  processNext()
+  return { job: publicJob(job) }
+}
+
+// On boot: anything left 'running' in meta.json is from a crashed server —
+// put it back in line, then start the pump.
+export async function recoverAndStart() {
+  await updateMeta((m) => {
+    for (const j of m.job_queue ?? []) if (j.status === 'running') j.status = 'queued'
+  })
+  processNext()
+}
+
+async function processNext() {
+  if (running) return
+  const meta = await readMeta()
+  const job = (meta.job_queue ?? []).find((j) => j.status === 'queued')
+  if (!job) return
+
+  job.status = 'running'
+  job.started_at = nowIso()
+  await updateMeta((m) => {
+    const q = (m.job_queue ?? []).find((j) => j.id === job.id)
+    if (q) Object.assign(q, { status: 'running', started_at: job.started_at })
+  })
+
+  let prompt
+  try {
+    prompt = await buildPrompt(job)
+  } catch (err) {
+    await finishJob(job, { ok: false, error: `prompt build failed: ${err.message}` })
+    return
+  }
+
+  const args = ['-p', prompt]
+  // Hard guarantee, independent of prompt wording: scheduled/light runs never
+  // get Playwright (LinkedIn automation is deep/on-demand only).
+  if (job.mode === 'light') args.push('--disallowedTools', 'mcp__playwright__*')
+
+  const logFile = path.join(paths.logsDir, `${job.id}.log`)
+  const log = fs.createWriteStream(logFile, { flags: 'a' })
+  log.write(`--- ${job.id} | ${job.mode} | ${job.query} | trigger=${job.trigger} | ${job.started_at} ---\n`)
+
+  // stdin ignored — otherwise headless claude waits 3s for piped input.
+  const child = spawn('claude', args, {
+    cwd: paths.root,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  child.stdout.pipe(log, { end: false })
+  child.stderr.pipe(log, { end: false })
+
+  const timeoutMin =
+    config.refresh.job_timeout_minutes?.[job.mode] ?? (job.mode === 'light' ? 90 : 45)
+  const timer = setTimeout(() => {
+    running && (running.timedOut = true)
+    child.kill('SIGTERM')
+    setTimeout(() => child.kill('SIGKILL'), 30_000).unref()
+  }, timeoutMin * 60_000)
+
+  running = { job, child, timer, logFile, timedOut: false }
+  emit('started', job, { log_file: path.relative(paths.root, logFile) })
+
+  child.on('error', (err) => {
+    // spawn failure (e.g. claude not on PATH)
+    log.write(`\n[server] spawn error: ${err.message}\n`)
+    log.end()
+    clearTimeout(timer)
+    finishJob(job, { ok: false, error: `spawn error: ${err.message}` })
+  })
+
+  child.on('exit', (code, signal) => {
+    clearTimeout(timer)
+    const timedOut = running?.timedOut
+    log.write(`\n[server] exited code=${code} signal=${signal}${timedOut ? ' (timeout)' : ''}\n`)
+    log.end()
+    const ok = code === 0 && !timedOut
+    finishJob(job, {
+      ok,
+      exit_code: code,
+      signal,
+      error: ok ? null : timedOut ? `timed out after ${timeoutMin}m` : `exit code ${code}`,
+    })
+  })
+}
+
+async function finishJob(job, result) {
+  const finished_at = nowIso()
+  const logFile = running?.logFile ?? null
+  running = null
+
+  await updateMeta((m) => {
+    m.job_queue = (m.job_queue ?? []).filter((j) => j.id !== job.id)
+    if (result.ok) {
+      if (job.mode === 'light') m.last_light_refresh_at = finished_at
+      else m.last_deep_refresh_at = finished_at
+    } else {
+      // The pipeline logs its own runs; when a job dies before it can, the
+      // failure must still be loud in the run log — never a silent no-op.
+      m.runs = [
+        ...(m.runs ?? []),
+        {
+          id: job.id,
+          started: job.started_at ?? job.enqueued_at,
+          finished: finished_at,
+          mode: job.mode,
+          trigger: `${job.trigger} (server-recorded FAILURE)`,
+          accounts_touched: [job.query],
+          credits_consuming_calls: [],
+          errors: [result.error ?? 'unknown failure'],
+          notes: [logFile ? `see ${path.relative(paths.root, logFile)}` : 'no log file'],
+        },
+      ]
+    }
+  })
+
+  emit(result.ok ? 'finished' : 'failed', job, {
+    error: result.error ?? null,
+    finished_at,
+  })
+  fireWebhook(result.ok ? 'run_finished' : 'run_failed', {
+    job: publicJob(job),
+    ok: result.ok,
+    error: result.error ?? null,
+    finished_at,
+    log_file: logFile ? path.relative(paths.root, logFile) : null,
+  })
+  processNext()
+}
+
+async function buildPrompt(job) {
+  const file =
+    job.query === 'ALL' && job.mode === 'light'
+      ? 'refresh-all-light.md'
+      : 'refresh-account.md'
+  const body = await fsp.readFile(path.join(paths.promptsDir, file), 'utf8')
+  return (
+    body +
+    `\n\n---\nRun parameters (from the local server):\n` +
+    `- Job id: ${job.id} (use as the run entry id in data/meta.json)\n` +
+    `- Account identifier: ${job.query}\n` +
+    `- Run mode: ${job.mode}\n` +
+    `- Trigger: ${job.trigger}\n`
+  )
+}
+
+// Webhook-out hooks (n8n, Phase 4/5). Fire-and-forget; failures only logged.
+function fireWebhook(kind, payload) {
+  const url = config.server?.webhooks?.[kind]
+  if (!url || typeof url !== 'string') return
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event: kind, ...payload }),
+  }).catch((err) => console.error(`[webhook ${kind}] ${err.message}`))
+}

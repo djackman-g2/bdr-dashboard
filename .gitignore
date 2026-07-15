@@ -1,0 +1,16 @@
+# Contains raw Apify API key — never commit
+.mcp.json
+
+# Research data: ZoomInfo-derived contact info + Gong/CRM notes.
+# Never push to GitHub (third-party sharing / ZI ToS); regenerable by the pipeline.
+data/
+
+node_modules/
+dist/
+.env
+.env.*
+*.log
+.DS_Store
+logs/
+.claude/settings.local.json
+.playwright-mcp/
