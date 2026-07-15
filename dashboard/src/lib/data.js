@@ -25,10 +25,12 @@ export function fetchStatus() {
 }
 
 export async function requestRefresh(query, mode) {
+  // origin "user": this came from a human clicking the button, so a deep run
+  // is allowed LinkedIn verification (auto-queued runs are not).
   const res = await fetch('/api/refresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, mode }),
+    body: JSON.stringify({ query, mode, origin: 'user' }),
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.error ?? `refresh failed: HTTP ${res.status}`)

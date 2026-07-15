@@ -78,7 +78,7 @@ app.get('/api/status', async (_req, res) => {
 })
 
 app.post('/api/refresh', async (req, res) => {
-  const { query, mode } = req.body ?? {}
+  const { query, mode, origin } = req.body ?? {}
   if (typeof query !== 'string' || !query.trim() || query.length > 200) {
     return res.status(400).json({ error: 'query must be a non-empty string (domain, name, SF Id, or "ALL")' })
   }
@@ -88,8 +88,14 @@ app.post('/api/refresh', async (req, res) => {
   if (query.trim() === 'ALL' && mode === 'deep') {
     return res.status(400).json({ error: 'deep refresh is per-account only — no deep ALL' })
   }
+  // origin "user" = a human explicitly asked (dashboard button). Omitted or
+  // anything else = "auto" (safe default): the run is spawned with Playwright
+  // hard-blocked, so auto-queued deep runs can never touch LinkedIn.
+  if (origin !== undefined && origin !== 'user' && origin !== 'auto') {
+    return res.status(400).json({ error: 'origin, if given, must be "user" or "auto"' })
+  }
   try {
-    const result = await enqueue({ query: query.trim(), mode, trigger: 'api' })
+    const result = await enqueue({ query: query.trim(), mode, trigger: 'api', origin })
     if (result.error) return res.status(result.status).json(result)
     res.status(202).json(result)
   } catch (err) {
@@ -124,7 +130,7 @@ app.get(/^\/(?!api\/|data\/).*/, (_req, res) => {
 const cronExpr = config.refresh.nightly_light_cron
 if (cron.validate(cronExpr)) {
   cron.schedule(cronExpr, () => {
-    enqueue({ query: 'ALL', mode: 'light', trigger: 'cron-nightly' }).then((r) => {
+    enqueue({ query: 'ALL', mode: 'light', trigger: 'cron-nightly', origin: 'auto' }).then((r) => {
       if (r.error) console.error(`[cron] nightly light refresh not queued: ${r.error}`)
       else console.log(`[cron] nightly light refresh queued as ${r.job.id}`)
     })

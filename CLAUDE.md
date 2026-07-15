@@ -6,7 +6,7 @@ Local, auto-updating account research dashboard for Declan Jackman (djackman@g2.
 
 1. **Research engine** — Claude Code (interactive in VS Code + headless `claude -p "$(cat prompts/...)"` spawned by the server). The ONLY layer that calls MCP tools. Writes structured JSON to disk.
 2. **Data layer** — `data/accounts/{domain-slug}.json` (one per account, validated against `schema/account.schema.json`), `data/index.json` (search index), `data/meta.json` (refresh timestamps, run log, job queue state).
-3. **Local server** — Express on 127.0.0.1: serves dashboard, `POST /api/refresh` ({query, mode: "light"|"deep"}) spawns headless Claude, job queue (max 1 concurrent), chokidar → SSE push, node-cron nightly light refresh. No system crontab.
+3. **Local server** — Express on 127.0.0.1: serves dashboard, `POST /api/refresh` ({query, mode: "light"|"deep", origin?: "user"|"auto"}) spawns headless Claude, job queue (max 1 concurrent), chokidar → SSE push, node-cron nightly light refresh. No system crontab. `origin` defaults to `auto`; only `origin: "user"` deep runs (dashboard button) are spawned with Playwright available — everything else gets `--disallowedTools 'mcp__playwright__*'`.
 4. **Dashboard** — Vite + React + Tailwind SPA. Reads JSON + SSE. Never calls MCPs. Dark mode default, `/` focuses search. Styled with G2 "Elevate" design tokens (extracted from g2.com production CSS 2026-07-15) — see `@theme` in `dashboard/src/index.css`: brand red `#ff492c`, primary purple `#5746b2`, indigo-black dark surfaces, Figtree font. Rebuild (`npm run build` in `dashboard/`) after UI changes; the server serves `dist/`.
 
 Build phases: 1) pipeline + one account end-to-end → 2) read-only dashboard → 3) server + auto-update → 4) scale to all accounts → 5) Playwright LinkedIn verification + messaging polish.
@@ -64,9 +64,11 @@ Headless risk: **validated 2026-07-15** — a headless `claude -p` probe from th
 
 Verification tool, NOT a scraper: low-volume targeted lookups (confirm one contact's title/tenure, read company headcount), deep refreshes only, human-like pacing. Automated LinkedIn access carries account-restriction risk — volume stays deliberately low. Lookup fails → mark contact `unconfirmed`, never block the pipeline.
 
-**Phase 5 auth approach (decided 2026-07-15): NO scripted logins, NO stored credentials.**
+**Phase 5 auth approach (implemented 2026-07-15): NO scripted logins, NO stored credentials.**
 - Never store LinkedIn (or Sales Nav) username/password anywhere — not in the repo, not gitignored files. Scripted headless logins also trip LinkedIn's automation defenses (checkpoints/CAPTCHAs) and are a restriction signal.
-- Instead: Playwright launches a **persistent context on Declan's existing Chrome profile**, inheriting the live LinkedIn + Sales Nav session cookies. Setup requires Chrome closed briefly (one browser per profile at a time).
+- **Chrome 136+ refuses automation on the default user data dir**, so the original "ride Declan's existing profile" plan is impossible. Instead: a **dedicated persistent Chrome profile** at `~/Library/Application Support/bdr-dashboard/chrome-profile` (outside the repo; `config.linkedin.profile_dir`). Declan logs into LinkedIn + Sales Nav there once, by hand; the Playwright MCP is registered with `--browser chrome --user-data-dir <that dir>` and inherits the session. Real Chrome never needs to be closed.
+- Session expired (authwall in a run)? Re-login by hand: `open -na "Google Chrome" --args --user-data-dir="$HOME/Library/Application Support/bdr-dashboard/chrome-profile" https://www.linkedin.com/login` — then quit that Chrome instance before the next Playwright run (one browser per profile at a time).
+- Runtime gating: only `origin: "user"` deep jobs get Playwright (server hard-block otherwise). Per-run budgets in `config.linkedin` (`max_contact_lookups_per_run`, `max_page_loads_per_run`, `min_seconds_between_pages`). Procedure lives in `prompts/refresh-account.md` Step 9b. Authwall/checkpoint mid-run → stop ALL LinkedIn use for that run, mark `attempted_failed`, never retry or attempt login.
 - Sales Nav lookups ride the same session, same rules: targeted verification of specific contacts only, never bulk.
 - If any future integration genuinely needs a stored secret → macOS Keychain, never a file.
 - ZoomInfo `enrich_contacts` remains the first verification line; LinkedIn is the upgrade path for contacts ZI can't confirm.

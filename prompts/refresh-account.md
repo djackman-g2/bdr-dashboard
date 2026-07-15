@@ -2,7 +2,7 @@
 
 You are the research engine for the BDR Account Research Dashboard. Input: an account identifier (domain, company name, or Salesforce Account Id) passed alongside this prompt. Read `CLAUDE.md` and `config/config.json` first; the data-integrity rules there are non-negotiable. Output: one JSON file conforming to `schema/account.schema.json`, plus updates to `data/index.json` and `data/meta.json`.
 
-Run mode: `deep` unless told otherwise. Never run Playwright/LinkedIn steps in a scheduled/light run.
+Run mode: `deep` unless told otherwise. The run parameters block appended by the server states whether LinkedIn/Playwright is allowed this run (only deep runs a human explicitly requested — `Origin: user`). If it says NO, the tool is hard-blocked anyway: record skipped contact verification as `sources_missing` `kind: "deferred_by_design"` and move on; that is policy, not a failure. If no run parameters block is present (interactive run), treat LinkedIn as allowed only when the user asked for a deep refresh.
 
 ## Step 0 — Run log open
 
@@ -38,7 +38,7 @@ Do NOT attempt `enrich_intent` (deprecated 2026-07-03, not allowlisted) or `enri
 
 ## Step 4 — Cross-check headcount/revenue
 
-Never report headcount/revenue from a single enrichment source (ZoomInfo is often ~an order of magnitude stale for private companies). Cross-check at least one of: LinkedIn company page (Playwright, deep runs only), careers-page role count, recent press. Agreement → `status: verified`. No corroboration → `status: unverified_estimate`. Disagreement → trust the live source, record in `discrepancies`, never average.
+Never report headcount/revenue from a single enrichment source (ZoomInfo is often ~an order of magnitude stale for private companies). Cross-check at least one of: LinkedIn company page (via the Step 9b session, only when LinkedIn is allowed this run), careers-page role count, recent press. Agreement → `status: verified`. No corroboration → `status: unverified_estimate`. Disagreement → trust the live source, record in `discrepancies`, never average.
 
 ## Step 5 — G2 presence + intent
 
@@ -59,7 +59,18 @@ Careers page (WebFetch/Playwright): total open roles, role mix by function, grow
 
 ## Step 9 — ICP contacts
 
-Candidates from ZoomInfo (`search_contacts` free → `enrich_contacts` paid, log it) and Salesforce Contacts. Sanity-check `get_recommended_contacts` persona fit; discard mismatches. Every contact enters `icp_contacts` as `verification.status: "unconfirmed"` UNLESS independently verified (LinkedIn via Playwright — deep runs only, low volume, human pacing — or ZoomInfo enrich with recent as-of). A failed LinkedIn lookup marks the contact `unconfirmed`; it never blocks the pipeline.
+Candidates from ZoomInfo (`search_contacts` free → `enrich_contacts` paid, log it) and Salesforce Contacts. Sanity-check `get_recommended_contacts` persona fit; discard mismatches. Every contact enters `icp_contacts` as `verification.status: "unconfirmed"` UNLESS independently verified — ZoomInfo enrich with a recent as-of is the first line; LinkedIn (Step 9b) is the upgrade path for contacts ZI can't confirm. A failed LinkedIn lookup marks the contact `unconfirmed`; it never blocks the pipeline.
+
+## Step 9b — LinkedIn / Sales Navigator verification (only when run parameters say allowed)
+
+LinkedIn is a **verification tool, never a scraper**. The Playwright browser launches on a dedicated logged-in Chrome profile (`config.linkedin.profile_dir`) — the session is inherited, there are no credentials anywhere, and you must NEVER attempt a login.
+
+- **Budgets** (from `config.linkedin`): at most `max_contact_lookups_per_run` contact lookups and `max_page_loads_per_run` total LinkedIn page loads per run; wait at least `min_seconds_between_pages` between page loads, varying the delay like a human reading.
+- **Session check first:** navigate to `linkedin.com/feed`. If you land on an authwall, login page, checkpoint, or CAPTCHA: STOP all LinkedIn use for the entire run immediately — no retries, no login attempts. Record `linkedin` in `sources_missing` `kind: "attempted_failed"` with note "session expired — needs interactive re-login in the dedicated profile", and finish the pipeline without it.
+- **Verify contacts in priority order** (best ICP fit / most outreach-critical first) until the lookup budget is spent. Go directly to a known profile URL (from ZoomInfo/CRM) when available; otherwise one targeted search. Read current title, company, and tenure. Match → `verification.status: "verified"` with method `linkedin`, a verified-at timestamp, and what was confirmed. Mismatch (left company, new role) → status stays `unconfirmed`; record the discrepancy — never silently drop live evidence.
+- **Headcount cross-check:** while in session, read the company page employee count once for Step 4 (counts against the page budget).
+- **Sales Navigator** rides the same session under the same budgets; use it only when the public profile is ambiguous.
+- **Never:** connection requests, messages, likes, list exports, feed scrolling, or any page load beyond the budget. Remaining unverified contacts after the budget is spent keep their "unconfirmed — verify before outreach" badge; that is the designed outcome, not a shortfall.
 
 ## Step 10 — Messaging
 
@@ -78,5 +89,5 @@ From verified facts only: 2-4 angles (each with `grounded_in` pointing at a spec
 Attempt EVERY connected MCP before any web-only fallback; genuinely unavailable after attempt → `sources_missing` + lower confidence. Never silently skip. Time-boundable metrics are stored as timestamped events, never aggregates.
 
 Every `sources_missing` entry sets `kind`:
-- `"deferred_by_design"` — intentionally skipped per standing policy (LinkedIn contact verification pre-Phase 5, ZoomInfo intent/signals by cost policy, Apify off). Not a failure; does not lower confidence by itself.
+- `"deferred_by_design"` — intentionally skipped per standing policy (LinkedIn verification in a run where Playwright is not allowed, ZoomInfo intent/signals by cost policy, Apify off). Not a failure; does not lower confidence by itself.
 - `"attempted_failed"` — genuinely attempted and unavailable (outage, 404, empty result, auth failure). Lowers confidence.

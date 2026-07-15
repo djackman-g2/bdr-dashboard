@@ -41,7 +41,7 @@ Rank candidates before queueing. All ranking signals must be free calls:
 POST sequentially in rank order (queue and caps live in the server — do not research inline):
 
 ```
-curl -s -X POST http://127.0.0.1:4680/api/refresh -H 'Content-Type: application/json' -d '{"query":"<domain>","mode":"deep"}'
+curl -s -X POST http://127.0.0.1:4680/api/refresh -H 'Content-Type: application/json' -d '{"query":"<domain>","mode":"deep","origin":"auto"}'
 ```
 
 Stop at the first `429 deep_cap_reached` — that is normal, never work around the cap. In the run entry, note which accounts were queued (with the tier that ranked them) and how many remain deferred.

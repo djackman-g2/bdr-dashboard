@@ -24,8 +24,8 @@ function emit(type, job, extra = {}) {
 
 export function publicJob(job) {
   if (!job) return null
-  const { id, query, mode, trigger, status, enqueued_at, started_at } = job
-  return { id, query, mode, trigger, status, enqueued_at, started_at }
+  const { id, query, mode, trigger, origin, status, enqueued_at, started_at } = job
+  return { id, query, mode, trigger, origin, status, enqueued_at, started_at }
 }
 
 export async function queueSnapshot() {
@@ -47,7 +47,10 @@ export async function deepCapStatus() {
   return { cap: config.refresh.deep_refresh_daily_cap, used: ranToday, pending, date: today }
 }
 
-export async function enqueue({ query, mode, trigger }) {
+// origin: 'user' = a human asked for this specific run (dashboard button /
+// explicit API call). Anything else — cron, light-run POST-backs, unlabeled
+// requests — is 'auto'. Only user-origin deep runs may touch Playwright.
+export async function enqueue({ query, mode, trigger, origin }) {
   const meta = await readMeta()
   const dupe = (meta.job_queue ?? []).find((j) => j.query === query && j.mode === mode)
   if (dupe) return { error: 'duplicate', status: 409, job: publicJob(dupe) }
@@ -64,6 +67,7 @@ export async function enqueue({ query, mode, trigger }) {
     query,
     mode,
     trigger,
+    origin: origin === 'user' ? 'user' : 'auto',
     status: 'queued',
     enqueued_at: nowIso(),
   }
@@ -106,9 +110,13 @@ async function processNext() {
   }
 
   const args = ['-p', prompt]
-  // Hard guarantee, independent of prompt wording: scheduled/light runs never
-  // get Playwright (LinkedIn automation is deep/on-demand only).
-  if (job.mode === 'light') args.push('--disallowedTools', 'mcp__playwright__*')
+  // Hard guarantee, independent of prompt wording: only a deep run a human
+  // explicitly asked for gets Playwright. Light runs and anything auto-queued
+  // (cron, light-run POST-backs) never do — LinkedIn automation must not run
+  // on a schedule.
+  if (job.mode === 'light' || job.origin !== 'user') {
+    args.push('--disallowedTools', 'mcp__playwright__*')
+  }
 
   const logFile = path.join(paths.logsDir, `${job.id}.log`)
   const log = fs.createWriteStream(logFile, { flags: 'a' })
@@ -213,7 +221,9 @@ async function buildPrompt(job) {
     `- Job id: ${job.id} (use as the run entry id in data/meta.json)\n` +
     `- Account identifier: ${job.query}\n` +
     `- Run mode: ${job.mode}\n` +
-    `- Trigger: ${job.trigger}\n`
+    `- Trigger: ${job.trigger}\n` +
+    `- Origin: ${job.origin}\n` +
+    `- LinkedIn/Playwright allowed this run: ${job.mode === 'deep' && job.origin === 'user' ? 'YES (deep, user-requested — verification only, respect config.linkedin caps)' : 'NO (tool is hard-blocked; record skipped verification as sources_missing kind=deferred_by_design)'}\n`
   )
 }
 
