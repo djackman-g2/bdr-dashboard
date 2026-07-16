@@ -28,6 +28,18 @@ Update the entry as you go; finalize at the end. If any connected MCP fails to a
 
 Resolve the canonical domain from `Account.Website` (strip scheme/www, lowercase). If missing or a redirect/parked page, resolve via web search + fetch of the company site. Domain is the key for every enrichment call and the filename (`data/accounts/{domain-with-dashes}.json`). Check CLAUDE.md "Known account corrections" and apply any overrides (record them in `corrections_applied`).
 
+## Step 2b — Fan out independent sources (speed)
+
+Once the canonical domain is resolved, Steps 5 (G2), 6 (Gong), 7 (News), and 8 (Hiring) are independent of each other and of ZoomInfo — run them as **parallel subagents** (all Task calls in a single message) while you continue with Steps 3, 4, and 9 yourself. Give each subagent its step's full instructions from this prompt plus the account name, domain, and SF Account Id, and have it return its findings as structured JSON text matching the relevant section of `schema/account.schema.json` (plus any `sources_missing` entries it would record and, for news/hiring, `signals[]` candidates).
+
+Hard rules for subagents — include them verbatim in every subagent prompt:
+- **Free tools only** (G2 MCP Server tools, Gong tools, WebSearch, WebFetch). NEVER any ZoomInfo tool — every paid call happens in the main thread where it is logged.
+- **Never use Playwright / touch LinkedIn**, regardless of what the run parameters allow — LinkedIn budgets are main-thread-only.
+- **Never write or edit any file.** Return findings as text; the main thread is the only writer of `data/**`.
+- Within the news subagent, fetch date-confirmation pages in parallel where possible.
+
+You (the main thread) merge subagent results into the account record, apply all data-integrity rules to them (they are findings, not final data), record their `sources_missing`, and remain solely responsible for Steps 9b, 10, and 11. If subagent spawning is unavailable or a subagent dies, run that step yourself sequentially exactly as written — the fan-out is an optimization, never a dependency.
+
 ## Step 3 — ZoomInfo (domain-first, log paid calls)
 
 1. `search_companies` with `companyWebsite=<domain>` (free) → get `zoominfoCompanyId`.
