@@ -24,13 +24,13 @@ export function fetchStatus() {
   return fetchJson('/api/status')
 }
 
-export async function requestRefresh(query, mode) {
-  // origin "user": this came from a human clicking the button, so a deep run
-  // is allowed LinkedIn verification (auto-queued runs are not).
+export async function requestRefresh(query, mode, opts = {}) {
+  // origin "user": this came from a human clicking the button. LinkedIn
+  // verification additionally requires the explicit opt-in checkbox.
   const res = await fetch('/api/refresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, mode, origin: 'user' }),
+    body: JSON.stringify({ query, mode, origin: 'user', linkedin: opts.linkedin === true }),
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.error ?? `refresh failed: HTTP ${res.status}`)

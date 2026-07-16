@@ -49,8 +49,10 @@ export async function deepCapStatus() {
 
 // origin: 'user' = a human asked for this specific run (dashboard button /
 // explicit API call). Anything else — cron, light-run POST-backs, unlabeled
-// requests — is 'auto'. Only user-origin deep runs may touch Playwright.
-export async function enqueue({ query, mode, trigger, origin }) {
+// requests — is 'auto'. linkedin: true = the human explicitly opted this run
+// into LinkedIn verification. Playwright requires deep AND user AND linkedin —
+// LinkedIn volume stays a deliberate per-run choice, never a default.
+export async function enqueue({ query, mode, trigger, origin, linkedin }) {
   const meta = await readMeta()
   const dupe = (meta.job_queue ?? []).find((j) => j.query === query && j.mode === mode)
   if (dupe) return { error: 'duplicate', status: 409, job: publicJob(dupe) }
@@ -68,6 +70,7 @@ export async function enqueue({ query, mode, trigger, origin }) {
     mode,
     trigger,
     origin: origin === 'user' ? 'user' : 'auto',
+    linkedin: linkedin === true,
     status: 'queued',
     enqueued_at: nowIso(),
   }
@@ -110,11 +113,11 @@ async function processNext() {
   }
 
   const args = ['-p', prompt]
-  // Hard guarantee, independent of prompt wording: only a deep run a human
-  // explicitly asked for gets Playwright. Light runs and anything auto-queued
-  // (cron, light-run POST-backs) never do — LinkedIn automation must not run
-  // on a schedule.
-  if (job.mode === 'light' || job.origin !== 'user') {
+  // Hard guarantee, independent of prompt wording: Playwright only when a
+  // human asked for THIS deep run AND opted it into LinkedIn verification.
+  // Light runs and anything auto-queued never get it — LinkedIn automation
+  // must not run on a schedule or by default.
+  if (!(job.mode === 'deep' && job.origin === 'user' && job.linkedin)) {
     args.push('--disallowedTools', 'mcp__playwright__*')
   }
 
@@ -223,7 +226,7 @@ async function buildPrompt(job) {
     `- Run mode: ${job.mode}\n` +
     `- Trigger: ${job.trigger}\n` +
     `- Origin: ${job.origin}\n` +
-    `- LinkedIn/Playwright allowed this run: ${job.mode === 'deep' && job.origin === 'user' ? 'YES (deep, user-requested — verification only, respect config.linkedin caps)' : 'NO (tool is hard-blocked; record skipped verification as sources_missing kind=deferred_by_design)'}\n`
+    `- LinkedIn/Playwright allowed this run: ${job.mode === 'deep' && job.origin === 'user' && job.linkedin ? 'YES (deep, user-requested, LinkedIn opted-in — verification only, respect config.linkedin caps)' : 'NO (tool is hard-blocked; record skipped verification as sources_missing kind=deferred_by_design)'}\n`
   )
 }
 

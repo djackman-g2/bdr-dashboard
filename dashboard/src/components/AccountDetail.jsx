@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import Badge, { ConfidenceBadge, VerifiedValueBadge, ContactVerificationBadge } from './Badge.jsx'
 import SignalsTimeline from './SignalsTimeline.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
@@ -99,6 +100,9 @@ export default function AccountDetail({ account, onBack, onRefresh, refreshPendi
   const a = account
   const sf = a.salesforce ?? {}
   const fg = a.firmographics ?? {}
+  // LinkedIn verification is opt-in per refresh — keeps automation volume a
+  // deliberate choice for the accounts you're actually about to call.
+  const [linkedin, setLinkedin] = useState(false)
 
   return (
     <div className="space-y-4">
@@ -124,14 +128,29 @@ export default function AccountDetail({ account, onBack, onRefresh, refreshPendi
             {a.last_deep_refresh_at && ` · last deep ${relativeTime(a.last_deep_refresh_at)}`}
           </span>
           {onRefresh && (
-            <button
-              onClick={() => onRefresh('deep')}
-              disabled={refreshPending}
-              title="Full pipeline: enrichment, news, contacts, messaging (uses ZoomInfo credits; daily cap applies)"
-              className="ml-auto rounded-md bg-brand-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-500"
-            >
-              {refreshPending ? '⟳ refresh queued…' : '⟳ Deep refresh'}
-            </button>
+            <span className="ml-auto flex items-center gap-2">
+              <label
+                title="Opt this run into LinkedIn contact verification (low-volume; reserve for accounts you're about to call)"
+                className="flex cursor-pointer items-center gap-1 text-xs text-zinc-600 dark:text-zinc-400"
+              >
+                <input
+                  type="checkbox"
+                  checked={linkedin}
+                  onChange={(e) => setLinkedin(e.target.checked)}
+                  disabled={refreshPending}
+                  className="h-3.5 w-3.5 accent-primary-500"
+                />
+                LinkedIn verify
+              </label>
+              <button
+                onClick={() => onRefresh('deep', { linkedin })}
+                disabled={refreshPending}
+                title="Full pipeline: enrichment, news, contacts, messaging (uses ZoomInfo credits; daily cap applies)"
+                className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-500"
+              >
+                {refreshPending ? '⟳ refresh queued…' : '⟳ Deep refresh'}
+              </button>
+            </span>
           )}
         </div>
         {fg.description && <p className="mt-2 max-w-3xl text-sm text-zinc-600 dark:text-zinc-400">{fg.description}</p>}

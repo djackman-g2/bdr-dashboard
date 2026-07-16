@@ -66,10 +66,10 @@ export default function App() {
     })
   }, [loadIndex, loadStatus])
 
-  const refresh = useCallback((q, mode) => {
+  const refresh = useCallback((q, mode, opts) => {
     setNotice(null)
-    requestRefresh(q, mode)
-      .then((r) => setNotice({ tone: 'ok', text: `Queued ${mode} refresh for ${r.job.query}` }))
+    requestRefresh(q, mode, opts)
+      .then((r) => setNotice({ tone: 'ok', text: `Queued ${mode} refresh for ${r.job.query}${opts?.linkedin ? ' (with LinkedIn verify)' : ''}` }))
       .catch((e) => setNotice({ tone: 'error', text: e.message }))
   }, [])
 
@@ -184,7 +184,7 @@ export default function App() {
             <AccountDetail
               account={account}
               onBack={() => navigate(null)}
-              onRefresh={status ? (mode) => refresh(account.domain, mode) : null}
+              onRefresh={status ? (mode, opts) => refresh(account.domain, mode, opts) : null}
               refreshPending={jobFor(account.domain)}
             />
           ) : (

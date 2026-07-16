@@ -20,6 +20,8 @@
     "queue_concurrency": 1,
     "deep_refresh_daily_cap": 10,
     "playwright_in_scheduled_runs": false,
+    "auto_queue_deep": false,
+    "catchup_after_hours": 26,
     "job_timeout_minutes": { "light": 90, "deep": 45 }
   },
   "linkedin": {

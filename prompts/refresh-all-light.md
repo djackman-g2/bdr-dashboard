@@ -27,24 +27,27 @@ Resolve each SF Account's canonical domain from `Website` (strip scheme/www, low
 - **Removed** (in index, not in SF): set `status: "archived"` + `archived_at` in the index entry, and set the same in the account JSON if one exists. **Never delete account files.**
 - **Existing**: update `name`/`industry` in the index if SF changed them.
 
-## Step 3 — Queue deep research, signal-ranked
+## Step 3 — Rank deep-research candidates (queueing is config-gated)
 
 Candidates: every index entry with `status: "pending_research"` — NOT just accounts new this run. (Cap-deferred accounts from earlier runs stay `pending_research` until a deep run completes; this step is their retry mechanism.)
 
-Rank candidates before queueing. All ranking signals must be free calls:
+Rank candidates. All ranking signals must be free calls:
 
 1. **Open opportunity** — one `soqlQuery`: open Opportunities (`IsClosed = false`) across the universe, grouped by AccountId. Any candidate with an open opp ranks first (largest amount first within the tier).
 2. **G2 buyer intent** — one `browse_buyer_intent` call for G2's products; match returned companies against candidate domains/names. The tool is flaky: attempt it, and on failure just skip this tier and note the failed attempt in the run entry.
 3. **Recent real CRM activity** — `LastActivityDate` within the last 90 days AND `<= today` (this org has future-dated values — discard any date > today, per config notes).
 4. **Everything else** — alphabetical by domain.
 
-POST sequentially in rank order (queue and caps live in the server — do not research inline):
+Then check `config.refresh.auto_queue_deep`:
+
+- **`false` (current default — the user hand-picks their daily accounts):** queue NOTHING. Instead write the top 10 ranked candidates into the run entry as a `notes` line — `"deep suggestions: 1. <domain> (tier1: open opp $X) 2. <domain> (tier3: activity <date>) …"` — so the morning shortlist is waiting in the dashboard. Also note the total still pending.
+- **`true`:** POST sequentially in rank order (queue and caps live in the server — do not research inline):
 
 ```
 curl -s -X POST http://127.0.0.1:4680/api/refresh -H 'Content-Type: application/json' -d '{"query":"<domain>","mode":"deep","origin":"auto"}'
 ```
 
-Stop at the first `429 deep_cap_reached` — that is normal, never work around the cap. In the run entry, note which accounts were queued (with the tier that ranked them) and how many remain deferred.
+Stop at the first `429 deep_cap_reached` — that is normal, never work around the cap. In the run entry, note which accounts were queued (with the tier that ranked them) and how many remain deferred. Auto-queued runs never include LinkedIn (`origin: auto` — the server hard-blocks it).
 
 ## Step 4 — CRM deltas for existing researched accounts
 

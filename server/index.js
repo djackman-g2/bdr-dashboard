@@ -78,7 +78,7 @@ app.get('/api/status', async (_req, res) => {
 })
 
 app.post('/api/refresh', async (req, res) => {
-  const { query, mode, origin } = req.body ?? {}
+  const { query, mode, origin, linkedin } = req.body ?? {}
   if (typeof query !== 'string' || !query.trim() || query.length > 200) {
     return res.status(400).json({ error: 'query must be a non-empty string (domain, name, SF Id, or "ALL")' })
   }
@@ -94,8 +94,11 @@ app.post('/api/refresh', async (req, res) => {
   if (origin !== undefined && origin !== 'user' && origin !== 'auto') {
     return res.status(400).json({ error: 'origin, if given, must be "user" or "auto"' })
   }
+  if (linkedin !== undefined && typeof linkedin !== 'boolean') {
+    return res.status(400).json({ error: 'linkedin, if given, must be a boolean' })
+  }
   try {
-    const result = await enqueue({ query: query.trim(), mode, trigger: 'api', origin })
+    const result = await enqueue({ query: query.trim(), mode, trigger: 'api', origin, linkedin })
     if (result.error) return res.status(result.status).json(result)
     res.status(202).json(result)
   } catch (err) {
@@ -140,9 +143,34 @@ if (cron.validate(cronExpr)) {
   console.error(`[cron] INVALID expression in config: "${cronExpr}" — nightly refresh DISABLED`)
 }
 
+// ---------- Nightly catch-up ----------
+// node-cron only fires if the Mac is awake at 5:30; a slept-through nightly
+// was previously just skipped. Checked at boot and hourly: if the last light
+// refresh is older than catchup_after_hours (default 26h — just past one
+// nightly period, so it only fires when a nightly was actually missed),
+// queue one. enqueue() dedupes if an ALL/light job is already queued.
+async function catchupCheck() {
+  const hours = config.refresh.catchup_after_hours ?? 26
+  try {
+    const meta = await readMeta()
+    const last = meta.last_light_refresh_at ? Date.parse(meta.last_light_refresh_at) : 0
+    if (Date.now() - last < hours * 3_600_000) return
+    const r = await enqueue({ query: 'ALL', mode: 'light', trigger: 'catchup', origin: 'auto' })
+    if (r.error) {
+      if (r.error !== 'duplicate') console.error(`[catchup] not queued: ${r.error}`)
+    } else {
+      console.log(`[catchup] last light refresh > ${hours}h ago — queued ${r.job.id}`)
+    }
+  } catch (err) {
+    console.error(`[catchup] check failed: ${err.message}`)
+  }
+}
+setInterval(catchupCheck, 3_600_000)
+
 // ---------- Boot ----------
 const { host, port } = config.server
 app.listen(port, host, () => {
   console.log(`BDR dashboard server: http://${host}:${port}`)
   recoverAndStart()
+  catchupCheck()
 })
