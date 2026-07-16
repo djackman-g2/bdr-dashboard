@@ -86,6 +86,23 @@ currently null; payload = job + ok + error + log path, see `fireWebhook` in `ser
 - Staleness badges + one-click re-run (>30d).
 - Home "workbench": picks + in-flight + recently researched + stale-and-tier1.
 
+## 7F — OPTIONAL: queue concurrency 2 for non-LinkedIn jobs (only if batch waits still hurt after 7C)
+
+Today a 5-account batch ≈ 1.5h because the queue is serial; the last job waited 63 min to
+start. Before building this, note 7C's pre-emptive research (inbound auto-research, meeting
+prep, nightly picks) removes most of the perceived wait for free — do that first and see.
+
+If still wanted:
+- Prerequisite: shared-file write safety. Headless jobs currently Edit `data/meta.json` /
+  `data/index.json` directly; two concurrent jobs would race. Move those writes behind the
+  server (new endpoints: `POST /api/run-entry`, `POST /api/index-upsert` — server already
+  serializes its own meta writes) and update `prompts/refresh-account.md` to POST instead of Edit.
+- HARD RULE: LinkedIn jobs stay exclusive — never two concurrent (the dedicated Chrome
+  profile is single-instance anyway, and parallel LinkedIn traffic is the restriction-risk
+  pattern). Scheduler: a linkedin:true job runs alone; two linkedin:false jobs may overlap.
+- Keep `deep_refresh_daily_cap` semantics unchanged (checked at enqueue, unaffected).
+- Account files themselves don't conflict (one job per account; enqueue already dedupes).
+
 ## Facts a fresh session will want
 
 - 5 boss-priority accounts researched 2026-07-16: instabase, exostar, matik.io, usebutton,
