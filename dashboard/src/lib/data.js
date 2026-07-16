@@ -23,6 +23,12 @@ export function fetchSuggestions() {
   return fetchJson('/data/suggestions.json').catch(() => null)
 }
 
+// Salesforce activity sidecar, written by "activity" mode runs; absent until
+// the first one runs for the account.
+export function fetchActivity(slug) {
+  return fetchJson(`/data/activity/${slug}.json`).catch(() => null)
+}
+
 // ---- Phase 3 server API (queue status, refresh, live events) ----
 
 export function fetchStatus() {

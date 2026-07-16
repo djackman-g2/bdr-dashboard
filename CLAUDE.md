@@ -57,6 +57,7 @@ Headless risk: **validated 2026-07-15** — a headless `claude -p` probe from th
 ## Refresh model rules
 
 - All refreshes flow through the server → headless Claude. Queue of ONE concurrent pipeline run.
+- Third mode `activity` (per-account only): fast Salesforce-only pull (`prompts/refresh-activity.md`) → sidecar `data/activity/{slug}.json` rendered by the dashboard's "SF activity" box. Zero paid calls, no deep-cap slot, 10-min timeout, never Playwright. Remember: Task/Event `ActivityDate` can be future-dated (scheduled sequence steps) — flagged `scheduled`, never presented as the last touch.
 - Configurable per-day cap on deep refreshes (ZoomInfo credits + tokens).
 - Scheduled nightly light refresh: re-sync account list (removed → archive, never delete), pull deltas, update timestamps, and RANK pending-research accounts. Queueing the deep backlog is gated by `refresh.auto_queue_deep` — currently **false**: the nightly writes a top-10 ranked shortlist into its run notes and the user hand-picks the day's deep refreshes from the dashboard. **No LinkedIn/Playwright automation in scheduled runs — ever.**
 - Deep refresh (on-demand only): full pipeline incl. contact verification + fresh messaging.

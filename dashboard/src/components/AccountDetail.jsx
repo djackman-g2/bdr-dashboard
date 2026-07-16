@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Badge, { ConfidenceBadge, VerifiedValueBadge, ContactVerificationBadge } from './Badge.jsx'
 import SignalsTimeline from './SignalsTimeline.jsx'
 import ChatPanel from './ChatPanel.jsx'
+import SfActivity from './SfActivity.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
 import { toBullets } from '../lib/prose.js'
 
@@ -113,7 +114,7 @@ function SourcesMissing({ sources }) {
   )
 }
 
-export default function AccountDetail({ account, onBack, onRefresh, refreshPending }) {
+export default function AccountDetail({ account, activity, onBack, onRefresh, refreshPending }) {
   const a = account
   const sf = a.salesforce ?? {}
   const fg = a.firmographics ?? {}
@@ -297,6 +298,8 @@ export default function AccountDetail({ account, onBack, onRefresh, refreshPendi
 
         {/* Reference column: the facts behind the working material */}
         <div className="min-w-0 space-y-4">
+          <SfActivity activity={activity} onRefresh={onRefresh} refreshPending={refreshPending} />
+
           <Section title="Salesforce" aside={<span className="text-xs text-zinc-500">synced {relativeTime(sf.synced_at)}</span>}>
             <dl className="grid grid-cols-2 gap-3">
               <Field label="Account ID">

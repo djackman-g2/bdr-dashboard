@@ -3,7 +3,7 @@ import AccountList from './components/AccountList.jsx'
 import AccountDetail from './components/AccountDetail.jsx'
 import TodaysPicks from './components/TodaysPicks.jsx'
 import PendingAccount from './components/PendingAccount.jsx'
-import { fetchIndex, fetchAccount, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
+import { fetchIndex, fetchAccount, fetchActivity, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { formatDateTime, relativeTime } from './lib/format.js'
 
 function useHashRoute() {
@@ -140,6 +140,7 @@ export default function App() {
   const [dark, setDark] = useTheme()
   const [index, setIndex] = useState(null)
   const [account, setAccount] = useState(null)
+  const [activity, setActivity] = useState(null)
   const [error, setError] = useState(null)
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState(null) // null = server not running (read-only)
@@ -175,6 +176,9 @@ export default function App() {
         if (e.path.endsWith('index.json')) loadIndex()
         if (e.path.endsWith('suggestions.json')) loadSuggestions()
         const current = slugRef.current
+        if (current && e.path.endsWith(`activity/${current}.json`)) {
+          fetchActivity(current).then(setActivity)
+        }
         if (current && e.path.endsWith(`accounts/${current}.json`)) {
           // First deep run just landed for a previously-pending account —
           // clear the 404 error so the full detail view takes over.
@@ -215,13 +219,16 @@ export default function App() {
   useEffect(() => {
     if (!slug) {
       setAccount(null)
+      setActivity(null)
       return
     }
     setAccount(null)
+    setActivity(null)
     setError(null)
     fetchAccount(slug)
       .then(setAccount)
       .catch((e) => setError(e.message))
+    fetchActivity(slug).then(setActivity)
     detailRef.current?.scrollTo(0, 0)
   }, [slug])
 
@@ -341,6 +348,7 @@ export default function App() {
             (account ? (
               <AccountDetail
                 account={account}
+                activity={activity}
                 onBack={() => navigate(null)}
                 onRefresh={status ? (mode, opts) => refresh(account.domain, mode, opts) : null}
                 refreshPending={jobFor(account.domain)}

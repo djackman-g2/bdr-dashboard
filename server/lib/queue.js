@@ -216,7 +216,9 @@ async function buildPrompt(job) {
   const file =
     job.query === 'ALL' && job.mode === 'light'
       ? 'refresh-all-light.md'
-      : 'refresh-account.md'
+      : job.mode === 'activity'
+        ? 'refresh-activity.md'
+        : 'refresh-account.md'
   const body = await fsp.readFile(path.join(paths.promptsDir, file), 'utf8')
   return (
     body +

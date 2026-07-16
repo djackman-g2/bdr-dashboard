@@ -87,11 +87,11 @@ app.post('/api/refresh', async (req, res) => {
   if (typeof query !== 'string' || !query.trim() || query.length > 200) {
     return res.status(400).json({ error: 'query must be a non-empty string (domain, name, SF Id, or "ALL")' })
   }
-  if (mode !== 'light' && mode !== 'deep') {
-    return res.status(400).json({ error: 'mode must be "light" or "deep"' })
+  if (mode !== 'light' && mode !== 'deep' && mode !== 'activity') {
+    return res.status(400).json({ error: 'mode must be "light", "deep", or "activity"' })
   }
-  if (query.trim() === 'ALL' && mode === 'deep') {
-    return res.status(400).json({ error: 'deep refresh is per-account only — no deep ALL' })
+  if (query.trim() === 'ALL' && mode !== 'light') {
+    return res.status(400).json({ error: `${mode} refresh is per-account only — no ${mode} ALL` })
   }
   // origin "user" = a human explicitly asked (dashboard button). Omitted or
   // anything else = "auto" (safe default): the run is spawned with Playwright
