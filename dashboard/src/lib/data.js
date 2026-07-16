@@ -42,6 +42,39 @@ export async function requestRefresh(query, mode, opts = {}) {
   return body
 }
 
+// Phase 6 — chat grounded on one account's dossier. The server streams
+// NDJSON lines; EventSource can't POST, so parse the fetch body ourselves.
+export async function streamChat(slug, messages, { onDelta, onDone, onError, signal } = {}) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slug, messages }),
+    signal,
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? `chat failed: HTTP ${res.status}`)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line) continue
+      const evt = JSON.parse(line)
+      if (evt.type === 'delta') onDelta?.(evt.text)
+      else if (evt.type === 'done') onDone?.(evt)
+      else if (evt.type === 'error') onError?.(new Error(evt.error))
+    }
+  }
+}
+
 // Live updates over SSE. Returns an unsubscribe function. If the server
 // isn't running (plain `vite dev`), EventSource just retries quietly and
 // the dashboard stays read-only.

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import Badge, { ConfidenceBadge, VerifiedValueBadge, ContactVerificationBadge } from './Badge.jsx'
 import SignalsTimeline from './SignalsTimeline.jsx'
+import ChatPanel from './ChatPanel.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
 
 function Section({ title, children, aside }) {
@@ -157,6 +158,11 @@ export default function AccountDetail({ account, onBack, onRefresh, refreshPendi
       </div>
 
       <SourcesMissing sources={a.sources_missing} />
+
+      {/* Chat needs the local server (it holds the API key); onRefresh being
+          set is the existing "server is up" signal. Keyed by slug so the
+          conversation resets when switching accounts. */}
+      {onRefresh && <ChatPanel key={a.slug} slug={a.slug} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Section title="Salesforce" aside={<span className="text-xs text-zinc-500">synced {relativeTime(sf.synced_at)}</span>}>

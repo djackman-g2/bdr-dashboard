@@ -9,6 +9,7 @@
     "linkedin:check": "node scripts/linkedin-session-check.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "chokidar": "^4.0.3",
     "express": "^4.21.2",
     "node-cron": "^4.6.0",

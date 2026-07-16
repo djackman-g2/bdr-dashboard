@@ -16,6 +16,7 @@ import {
   deepCapStatus,
   jobEvents,
 } from './lib/queue.js'
+import { handleChat } from './lib/chat.js'
 
 fs.mkdirSync(paths.logsDir, { recursive: true })
 
@@ -105,6 +106,10 @@ app.post('/api/refresh', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+// Phase 6 — chat grounded on one account's research JSON. Direct Anthropic
+// API call (key from macOS Keychain), no MCPs; streams NDJSON back.
+app.post('/api/chat', handleChat)
 
 // ---------- Static ----------
 // Data JSON — same URL shape the Vite dev shim mirrors. Never cached.
