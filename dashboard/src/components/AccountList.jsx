@@ -1,8 +1,14 @@
 import { useMemo } from 'react'
-import Badge, { ConfidenceBadge } from './Badge.jsx'
 import { relativeTime } from '../lib/format.js'
 
-export default function AccountList({ index, query, onOpen }) {
+// Confidence as a quiet dot — the rail is scanned, not read.
+const CONFIDENCE_DOT = {
+  high: 'bg-success-500',
+  medium: 'bg-warning-500',
+  low: 'bg-brand-400',
+}
+
+export default function AccountList({ index, query, selected, onOpen }) {
   const accounts = index?.accounts ?? []
 
   const filtered = useMemo(() => {
@@ -18,37 +24,53 @@ export default function AccountList({ index, query, onOpen }) {
   }
 
   return (
-    <div className="mt-4">
-      <p className="mb-2 text-xs text-zinc-500">
+    <div>
+      <p className="px-3 pt-2 pb-1 text-[11px] text-zinc-500">
         {filtered.length} of {accounts.length} account{accounts.length === 1 ? '' : 's'}
       </p>
-      <ul className="space-y-2">
-        {filtered.map((a) => (
-          <li key={a.slug} className="[contain-intrinsic-size:auto_7rem] [content-visibility:auto]">
-            <button
-              onClick={() => onOpen(a.slug)}
-              className="w-full rounded-lg border border-zinc-200 bg-white p-4 text-left transition hover:border-primary-400 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-primary-500"
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-base font-semibold">{a.name}</span>
-                <span className="text-xs text-zinc-500">{a.domain}</span>
-                {a.status === 'archived' && <Badge tone="gray">archived</Badge>}
-                <ConfidenceBadge level={a.confidence} />
-                <span className="ml-auto text-xs text-zinc-500" title={a.refreshed_at}>
-                  refreshed {relativeTime(a.refreshed_at)}
-                </span>
-              </div>
-              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-500">
-                {a.industry && <span>{a.industry}</span>}
-                {a.employees_display && <span>{a.employees_display} employees</span>}
-              </div>
-              {a.top_signal && <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{a.top_signal}</p>}
-            </button>
-          </li>
-        ))}
+      <ul>
+        {filtered.map((a) => {
+          const isSel = a.slug === selected
+          return (
+            <li key={a.slug} className="[contain-intrinsic-size:auto_4.25rem] [content-visibility:auto]">
+              <button
+                onClick={() => onOpen(a.slug)}
+                aria-current={isSel ? 'page' : undefined}
+                className={`w-full border-l-2 px-3 py-2 text-left transition ${
+                  isSel
+                    ? 'border-brand-500 bg-zinc-100 dark:bg-zinc-800/70'
+                    : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    title={a.confidence ? `confidence: ${a.confidence}` : 'not researched yet'}
+                    className={`h-1.5 w-1.5 shrink-0 rounded-full ${CONFIDENCE_DOT[a.confidence] ?? 'bg-zinc-300 dark:bg-zinc-600'}`}
+                  />
+                  <span className="truncate text-sm font-semibold">{a.name}</span>
+                  {a.status === 'archived' && (
+                    <span className="shrink-0 rounded-full border border-zinc-300 px-1 text-[10px] text-zinc-500 dark:border-zinc-700">
+                      archived
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-[10px] text-zinc-500" title={a.refreshed_at}>
+                    {a.refreshed_at ? relativeTime(a.refreshed_at) : 'pending'}
+                  </span>
+                </div>
+                <div className="mt-0.5 truncate pl-3.5 text-xs text-zinc-500">
+                  {a.domain}
+                  {a.industry && ` · ${a.industry}`}
+                </div>
+                {a.top_signal && (
+                  <p className="mt-0.5 truncate pl-3.5 text-xs text-zinc-600 dark:text-zinc-400">{a.top_signal}</p>
+                )}
+              </button>
+            </li>
+          )
+        })}
       </ul>
       {!filtered.length && (
-        <p className="mt-10 text-center text-sm text-zinc-500">No accounts match “{query}”.</p>
+        <p className="mt-10 px-3 text-center text-sm text-zinc-500">No accounts match “{query}”.</p>
       )}
     </div>
   )

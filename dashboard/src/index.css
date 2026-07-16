@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Self-hosted Figtree (G2's brand face) — bundled so it renders identically
+   offline and past font-blocking extensions; no Google Fonts dependency. */
+@import "@fontsource-variable/figtree";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -7,7 +10,7 @@
  * (nessy_app + elevate-assets, captured 2026-07-15).
  */
 @theme {
-  --font-sans: "Figtree", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-sans: "Figtree Variable", "Figtree", ui-sans-serif, system-ui, -apple-system, sans-serif;
 
   /* Elevate neutrals mapped onto the zinc scale the components already use.
      Dark end is G2's indigo-black surface ramp, not gray. */

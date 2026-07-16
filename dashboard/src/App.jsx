@@ -4,7 +4,7 @@ import AccountDetail from './components/AccountDetail.jsx'
 import TodaysPicks from './components/TodaysPicks.jsx'
 import PendingAccount from './components/PendingAccount.jsx'
 import { fetchIndex, fetchAccount, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
-import { formatDateTime } from './lib/format.js'
+import { formatDateTime, relativeTime } from './lib/format.js'
 
 function useHashRoute() {
   const [hash, setHash] = useState(window.location.hash)
@@ -26,6 +26,51 @@ function useTheme() {
   return [dark, setDark]
 }
 
+// Workbench home — fills the detail pane when no account is open.
+function Home({ suggestions, index, status, navigate, refresh, jobFor }) {
+  const researched = (index?.accounts ?? []).filter((a) => a.status === 'active').length
+  const pending = (index?.accounts ?? []).filter((a) => a.status === 'pending_research').length
+  return (
+    <div className="mx-auto max-w-3xl">
+      <h1 className="text-xl font-bold tracking-tight">Workbench</h1>
+      <p className="mt-1 text-sm text-zinc-500">
+        {index
+          ? `${researched} researched · ${pending} pending research · index ${formatDateTime(index.generated_at)}`
+          : 'Loading index…'}
+      </p>
+      <TodaysPicks
+        suggestions={suggestions}
+        index={index}
+        onOpen={(s) => navigate(s)}
+        onQueue={status ? (domain) => refresh(domain, 'deep') : null}
+        jobFor={jobFor}
+        deepCap={status?.deep_cap}
+      />
+      {status?.recent_runs?.length > 0 && (
+        <section className="mt-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">Recent runs</h2>
+          <ul className="mt-2 space-y-1.5">
+            {status.recent_runs.slice(0, 6).map((r, i) => (
+              <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.errors?.length ? 'bg-warning-500' : 'bg-success-500'}`} />
+                <span className="font-medium">{(r.accounts_touched ?? []).join(', ') || r.mode}</span>
+                <span className="text-xs text-zinc-500">
+                  {r.mode} · {relativeTime(r.finished ?? r.started)}
+                  {r.errors?.length ? ` · ${r.errors.length} note${r.errors.length === 1 ? '' : 's'}` : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <p className="mt-6 text-xs text-zinc-500">
+        Pick an account from the rail, or press <kbd className="rounded border border-zinc-300 px-1 dark:border-zinc-700">/</kbd> to
+        search. Accounts marked “not researched yet” can be queued for deep research from their page.
+      </p>
+    </div>
+  )
+}
+
 export default function App() {
   const [slug, navigate] = useHashRoute()
   const [dark, setDark] = useTheme()
@@ -36,6 +81,7 @@ export default function App() {
   const [status, setStatus] = useState(null) // null = server not running (read-only)
   const [notice, setNotice] = useState(null)
   const searchRef = useRef(null)
+  const detailRef = useRef(null)
   const slugRef = useRef(slug)
   slugRef.current = slug
 
@@ -112,6 +158,7 @@ export default function App() {
     fetchAccount(slug)
       .then(setAccount)
       .catch((e) => setError(e.message))
+    detailRef.current?.scrollTo(0, 0)
   }, [slug])
 
   // "/" focuses search from anywhere (except while typing in an input).
@@ -119,8 +166,7 @@ export default function App() {
     const onKey = (e) => {
       if (e.key === '/' && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement?.tagName)) {
         e.preventDefault()
-        navigate(null)
-        requestAnimationFrame(() => searchRef.current?.focus())
+        searchRef.current?.focus()
       }
       if (e.key === 'Escape' && slug) navigate(null)
     }
@@ -129,17 +175,15 @@ export default function App() {
   }, [slug, navigate])
 
   return (
-    <div className="mx-auto min-h-screen max-w-5xl px-4 py-6">
-      <header className="flex items-center gap-3">
-        <button onClick={() => navigate(null)} className="flex items-center gap-2 text-lg font-bold tracking-tight">
+    <div className="flex h-screen flex-col">
+      {/* ---- Top bar ---- */}
+      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+        <button onClick={() => navigate(null)} className="flex items-center gap-2 text-base font-bold tracking-tight">
           <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-500 text-[10px] font-extrabold text-white">
             G2
           </span>
           BDR Account Research
         </button>
-        <span className="text-xs text-zinc-500">
-          {index && `index ${formatDateTime(index.generated_at)}`}
-        </span>
         {status?.running && (
           <span className="animate-pulse rounded-full border border-primary-300 bg-primary-100 px-2 py-0.5 text-xs text-primary-700 motion-reduce:animate-none dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300">
             ⟳ {status.running.query} ({status.running.mode})
@@ -150,6 +194,7 @@ export default function App() {
             {status.queue.length} queued
           </span>
         )}
+        {!status && <span className="text-xs text-zinc-500">read-only — server offline</span>}
         <button
           onClick={() => setDark(!dark)}
           className="ml-auto rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
@@ -159,79 +204,91 @@ export default function App() {
         </button>
       </header>
 
-      {notice && (
-        <div
-          aria-live="polite"
-          className={
-            notice.tone === 'error'
-              ? 'mt-4 flex items-start justify-between rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300'
-              : 'mt-4 flex items-start justify-between rounded-lg border border-success-300 bg-success-100 p-3 text-sm text-success-700 dark:border-success-700 dark:bg-success-900/60 dark:text-success-300'
-          }
+      {/* ---- Two-pane workbench ---- */}
+      <div className="flex min-h-0 flex-1">
+        {/* Account rail. On narrow screens it swaps with the detail pane. */}
+        <aside
+          className={`w-full shrink-0 flex-col border-zinc-200 bg-white lg:flex lg:w-80 lg:border-r xl:w-96 dark:border-zinc-800 dark:bg-zinc-900 ${slug ? 'hidden' : 'flex'}`}
         >
-          <span>{notice.text}</span>
-          <button onClick={() => setNotice(null)} aria-label="Dismiss notice" className="ml-3 opacity-60 hover:opacity-100">✕</button>
-        </div>
-      )}
+          <div className="shrink-0 border-b border-zinc-200 p-3 dark:border-zinc-800">
+            <input
+              ref={searchRef}
+              type="search"
+              name="account-search"
+              aria-label="Search accounts"
+              autoComplete="off"
+              spellCheck={false}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder='Search accounts… ("/")'
+              className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-300/50 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-primary-400 dark:focus:ring-primary-700/40"
+            />
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {index ? (
+              <AccountList index={index} query={query} selected={slug} onOpen={(s) => navigate(s)} />
+            ) : (
+              !error && <p className="mt-10 text-center text-sm text-zinc-500">Loading…</p>
+            )}
+          </div>
+        </aside>
 
-      {error && !pendingEntry && !(slug && !index) && (
-        <div className="mt-4 rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
-          Failed to load data: {error}
-        </div>
-      )}
+        {/* Detail pane */}
+        <main
+          ref={detailRef}
+          className={`min-w-0 flex-1 overflow-y-auto bg-zinc-50 p-4 lg:block lg:p-6 dark:bg-zinc-950 ${slug ? 'block' : 'hidden'}`}
+        >
+          {notice && (
+            <div
+              aria-live="polite"
+              className={
+                notice.tone === 'error'
+                  ? 'mb-4 flex items-start justify-between rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300'
+                  : 'mb-4 flex items-start justify-between rounded-lg border border-success-300 bg-success-100 p-3 text-sm text-success-700 dark:border-success-700 dark:bg-success-900/60 dark:text-success-300'
+              }
+            >
+              <span>{notice.text}</span>
+              <button onClick={() => setNotice(null)} aria-label="Dismiss notice" className="ml-3 opacity-60 hover:opacity-100">✕</button>
+            </div>
+          )}
 
-      {!slug && (
-        <main className="mt-4">
-          <input
-            ref={searchRef}
-            type="search"
-            name="account-search"
-            aria-label="Search accounts"
-            autoComplete="off"
-            spellCheck={false}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder='Search accounts… (press "/" to focus)'
-            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-300/50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-primary-400 dark:focus:ring-primary-700/40"
-          />
-          {!query && (
-            <TodaysPicks
+          {error && !pendingEntry && !(slug && !index) && (
+            <div className="mb-4 rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
+              Failed to load data: {error}
+            </div>
+          )}
+
+          {!slug && (
+            <Home
               suggestions={suggestions}
               index={index}
-              onOpen={(s) => navigate(s)}
-              onQueue={status ? (domain) => refresh(domain, 'deep') : null}
+              status={status}
+              navigate={navigate}
+              refresh={refresh}
               jobFor={jobFor}
-              deepCap={status?.deep_cap}
             />
           )}
-          {index ? (
-            <AccountList index={index} query={query} onOpen={(s) => navigate(s)} />
-          ) : (
-            !error && <p className="mt-10 text-center text-sm text-zinc-500">Loading…</p>
-          )}
-        </main>
-      )}
 
-      {slug && (
-        <main className="mt-4">
-          {account ? (
-            <AccountDetail
-              account={account}
-              onBack={() => navigate(null)}
-              onRefresh={status ? (mode, opts) => refresh(account.domain, mode, opts) : null}
-              refreshPending={jobFor(account.domain)}
-            />
-          ) : pendingEntry ? (
-            <PendingAccount
-              entry={pendingEntry}
-              onBack={() => navigate(null)}
-              onRefresh={status ? (mode, opts) => refresh(pendingEntry.domain, mode, opts) : null}
-              refreshPending={jobFor(pendingEntry.domain)}
-            />
-          ) : (
-            !error && <p className="mt-10 text-center text-sm text-zinc-500">Loading {slug}…</p>
-          )}
+          {slug &&
+            (account ? (
+              <AccountDetail
+                account={account}
+                onBack={() => navigate(null)}
+                onRefresh={status ? (mode, opts) => refresh(account.domain, mode, opts) : null}
+                refreshPending={jobFor(account.domain)}
+              />
+            ) : pendingEntry ? (
+              <PendingAccount
+                entry={pendingEntry}
+                onBack={() => navigate(null)}
+                onRefresh={status ? (mode, opts) => refresh(pendingEntry.domain, mode, opts) : null}
+                refreshPending={jobFor(pendingEntry.domain)}
+              />
+            ) : (
+              !error && <p className="mt-10 text-center text-sm text-zinc-500">Loading {slug}…</p>
+            ))}
         </main>
-      )}
+      </div>
     </div>
   )
 }

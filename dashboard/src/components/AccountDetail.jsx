@@ -3,11 +3,12 @@ import Badge, { ConfidenceBadge, VerifiedValueBadge, ContactVerificationBadge } 
 import SignalsTimeline from './SignalsTimeline.jsx'
 import ChatPanel from './ChatPanel.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
+import { toBullets } from '../lib/prose.js'
 
 function Section({ title, children, aside }) {
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-3 flex items-center gap-2 border-l-2 border-brand-500 pl-2">
         <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">{title}</h2>
         {aside}
       </div>
@@ -22,6 +23,21 @@ function Field({ label, children }) {
       <dt className="text-xs text-zinc-500">{label}</dt>
       <dd className="text-sm">{children ?? '—'}</dd>
     </div>
+  )
+}
+
+// Long pipeline prose renders as bullets (display-only — the JSON is untouched
+// and every sentence is kept). Short text stays a paragraph.
+function Prose({ text, className = 'text-sm text-zinc-600 dark:text-zinc-400' }) {
+  if (!text) return null
+  const bullets = toBullets(text)
+  if (!bullets) return <p className={className}>{text}</p>
+  return (
+    <ul className={`list-outside list-disc space-y-1 pl-4 marker:text-zinc-400 dark:marker:text-zinc-600 ${className}`}>
+      {bullets.map((b, i) => (
+        <li key={i}>{b}</li>
+      ))}
+    </ul>
   )
 }
 
@@ -106,13 +122,16 @@ export default function AccountDetail({ account, onBack, onRefresh, refreshPendi
   const [linkedin, setLinkedin] = useState(false)
 
   return (
-    <div className="space-y-4">
-      <div>
-        <button onClick={onBack} className="text-sm text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
-          ← All accounts
-        </button>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-bold">{a.name}</h1>
+    // flex column (not space-y): flex gaps don't collapse with the command
+    // bar's negative margins, so content never slides under it at scroll 0.
+    <div className="flex flex-col gap-4">
+      {/* ---- Sticky command bar: identity + refresh controls stay in reach ---- */}
+      <div className="sticky top-0 z-10 rounded-lg border border-zinc-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <button onClick={onBack} className="text-sm text-info-500 hover:text-info-600 hover:underline lg:hidden dark:text-info-400">
+            ←
+          </button>
+          <h1 className="text-lg font-bold tracking-tight">{a.name}</h1>
           <a
             href={`https://${a.domain}`}
             target="_blank"
@@ -154,277 +173,284 @@ export default function AccountDetail({ account, onBack, onRefresh, refreshPendi
             </span>
           )}
         </div>
-        {fg.description && <p className="mt-2 max-w-3xl text-sm text-zinc-600 dark:text-zinc-400">{fg.description}</p>}
       </div>
+
+      <Prose text={fg.description} className="max-w-4xl text-sm text-zinc-600 dark:text-zinc-400" />
 
       <SourcesMissing sources={a.sources_missing} />
 
-      {/* Chat needs the local server (it holds the API key); onRefresh being
-          set is the existing "server is up" signal. Keyed by slug so the
-          conversation resets when switching accounts. */}
-      {onRefresh && <ChatPanel key={a.slug} slug={a.slug} />}
+      {/* ---- Workbench grid: working column + reference column ---- */}
+      <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-3">
+        {/* Working column: what you use while writing / calling */}
+        <div className="min-w-0 space-y-4 xl:col-span-2">
+          {onRefresh && <ChatPanel key={a.slug} slug={a.slug} />}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Section title="Salesforce" aside={<span className="text-xs text-zinc-500">synced {relativeTime(sf.synced_at)}</span>}>
-          <dl className="grid grid-cols-2 gap-3">
-            <Field label="Account ID">
-              <span className="font-mono text-xs">{sf.account_id}</span>
-            </Field>
-            <Field label="Industry">{sf.industry}</Field>
-            <Field label="Employees (CRM)">{sf.number_of_employees?.toLocaleString()}</Field>
-            <Field label="Billing">
-              {[sf.billing_city, sf.billing_state, sf.billing_country].filter(Boolean).join(', ') || '—'}
-            </Field>
-          </dl>
-          {sf.bdr_notes && (
-            <p className="mt-3 text-sm">
-              <span className="text-xs text-zinc-500">BDR notes: </span>
-              {sf.bdr_notes}
-            </p>
-          )}
-          {sf.open_opportunities?.length > 0 && (
-            <div className="mt-3">
-              <p className="text-xs font-medium text-zinc-500">Open opportunities</p>
-              <ul className="mt-1 space-y-2">
-                {sf.open_opportunities.map((o) => (
-                  <li key={o.id} className="rounded border border-zinc-200 p-2 text-sm dark:border-zinc-700">
-                    <div className="font-medium">{o.name}</div>
-                    <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-zinc-500">
-                      <span>{o.stage}</span>
-                      {o.amount != null && <span>{formatMoney(o.amount)}</span>}
-                      {o.close_date && <span>closes {formatDate(o.close_date)}</span>}
-                      {o.owner && <span>AE: {o.owner}</span>}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {sf.crm_history_notes && (
-            <p className="mt-3 text-sm text-zinc-600 dark:text-zinc-400">
-              <span className="text-xs text-zinc-500">CRM history: </span>
-              {sf.crm_history_notes}
-            </p>
-          )}
-        </Section>
-
-        <Section title="Firmographics">
-          <dl className="grid grid-cols-2 gap-3">
-            <VerifiedValue label="Employees" vv={fg.employees} />
-            <VerifiedValue label="Revenue" vv={fg.revenue_usd} />
-            <Field label="Founded">{fg.founded_year}</Field>
-            <Field label="HQ">{fg.hq}</Field>
-            <Field label="Ownership">{fg.ownership}</Field>
-            <Field label="Categories">{fg.categories?.join(', ')}</Field>
-          </dl>
-          {fg.linkedin_url && (
-            <a href={fg.linkedin_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
-              LinkedIn company page
-            </a>
-          )}
-        </Section>
-      </div>
-
-      {a.g2 && (a.g2.products?.length || a.g2.presence_summary) && (
-        <Section title="G2 presence">
-          {a.g2.products?.map((p) => (
-            <div key={p.slug} className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-              <a
-                href={`https://www.g2.com/products/${p.slug}/reviews`}
-                target="_blank"
-                rel="noreferrer"
-                className="font-medium text-info-500 hover:text-info-600 hover:underline dark:text-info-400"
-              >
-                {p.name || p.slug}
-              </a>
-              {p.rating != null && (
-                <span>
-                  <span className="text-star">★</span> {p.rating} ({p.review_count} reviews)
-                </span>
+          {a.messaging && (a.messaging.angles?.length || a.messaging.openers?.length || a.messaging.things_to_probe?.length) && (
+            <Section
+              title="Messaging"
+              aside={a.messaging.generated_at && <span className="text-xs text-zinc-500">generated {relativeTime(a.messaging.generated_at)}</span>}
+            >
+              {a.messaging.angles?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-zinc-500">Angles</p>
+                  <ul className="mt-1 space-y-2">
+                    {a.messaging.angles.map((m, i) => (
+                      <li key={i} className="text-sm">
+                        {m.angle}
+                        <p className="text-xs text-zinc-500">grounded in: {m.grounded_in}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
-              {p.categories?.length > 0 && <span className="text-xs text-zinc-500">{p.categories.join(' · ')}</span>}
-            </div>
-          ))}
-          {a.g2.presence_summary && <p className="text-sm text-zinc-600 dark:text-zinc-400">{a.g2.presence_summary}</p>}
-        </Section>
-      )}
-
-      <Section title="Signals">
-        <SignalsTimeline signals={a.signals} />
-      </Section>
-
-      {a.news?.length > 0 && (
-        <Section title="News">
-          <ul className="space-y-3">
-            {a.news.map((n, i) => (
-              <li key={i}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <a href={n.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
-                    {n.title}
-                  </a>
-                  {!n.date_confirmed_on_page && <Badge tone="amber">⚠ date unconfirmed</Badge>}
+              {a.messaging.openers?.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-zinc-500">Openers</p>
+                  <ul className="mt-1 space-y-2">
+                    {a.messaging.openers.map((o, i) => (
+                      <li key={i} className="rounded border border-zinc-200 bg-zinc-50 p-2 text-sm dark:border-zinc-700 dark:bg-zinc-800/50">
+                        {o}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-                <p className="text-xs text-zinc-500">
-                  {n.publisher} · {formatDate(n.published_at)}
-                </p>
-                <p className="mt-1 text-sm">{n.summary}</p>
-                {n.relevance && (
-                  <p className="mt-0.5 text-sm text-zinc-500 italic">
-                    <span className="font-medium not-italic text-zinc-600 dark:text-zinc-400">Why it matters: </span>
-                    {n.relevance}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
-
-      {a.hiring && (a.hiring.open_roles_total != null || a.hiring.notes) && (
-        <Section title="Hiring" aside={a.hiring.as_of && <span className="text-xs text-zinc-500">as of {formatDate(a.hiring.as_of)}</span>}>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
-            {a.hiring.open_roles_total != null && (
-              <span>
-                <span className="text-lg font-semibold">{a.hiring.open_roles_total}</span> open roles
-              </span>
-            )}
-            {a.hiring.direction && (
-              <Badge tone={a.hiring.direction === 'growing' ? 'green' : a.hiring.direction === 'shrinking' ? 'red' : 'gray'}>
-                {a.hiring.direction}
-              </Badge>
-            )}
-            {a.hiring.careers_url && (
-              <a href={a.hiring.careers_url} target="_blank" rel="noreferrer" className="text-xs text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
-                careers page
-              </a>
-            )}
-          </div>
-          {a.hiring.role_mix?.length > 0 && (
-            <p className="mt-2 text-sm">
-              {a.hiring.role_mix.map((r) => `${r.function}: ${r.count}`).join(' · ')}
-            </p>
+              )}
+              {a.messaging.things_to_probe?.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-xs font-medium text-zinc-500">Things to probe (research ≠ qualification)</p>
+                  <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
+                    {a.messaging.things_to_probe.map((t, i) => (
+                      <li key={i}>{t}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </Section>
           )}
-          {a.hiring.notes && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">{a.hiring.notes}</p>}
-        </Section>
-      )}
 
-      <Section title={`ICP contacts (${a.icp_contacts?.length ?? 0})`}>
-        {a.icp_contacts?.length ? (
-          <ul className="grid gap-3 lg:grid-cols-2">
-            {a.icp_contacts.map((c, i) => (
-              <li key={i} className="rounded border border-zinc-200 p-3 dark:border-zinc-700">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{c.name}</span>
-                  <ContactVerificationBadge verification={c.verification} />
-                </div>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">{c.title}</p>
-                <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-zinc-500">
-                  {c.department && <span>{c.department}</span>}
-                  {c.seniority && <span>{c.seniority}</span>}
-                  {c.email && (
-                    <a href={`mailto:${c.email}`} className="text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
-                      {c.email}
-                    </a>
-                  )}
-                  {c.linkedin_url && (
-                    <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
-                      LinkedIn
-                    </a>
-                  )}
-                  {c.salesforce_contact_id && <span className="font-mono">SF: {c.salesforce_contact_id}</span>}
-                </div>
-                {c.why_icp && <p className="mt-2 text-sm">{c.why_icp}</p>}
-                <SourceList sources={c.sources} />
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-zinc-500">No ICP contacts recorded.</p>
-        )}
-      </Section>
-
-      {a.gong?.available && (
-        <Section title="Gong history" aside={a.gong.retrieved_at && <span className="text-xs text-zinc-500">retrieved {relativeTime(a.gong.retrieved_at)}</span>}>
-          <p className="text-sm whitespace-pre-line">{a.gong.summary}</p>
-          {a.gong.last_call_at && <p className="mt-1 text-xs text-zinc-500">Last call: {formatDateTime(a.gong.last_call_at)}</p>}
-        </Section>
-      )}
-
-      {a.messaging && (a.messaging.angles?.length || a.messaging.openers?.length || a.messaging.things_to_probe?.length) && (
-        <Section
-          title="Messaging"
-          aside={a.messaging.generated_at && <span className="text-xs text-zinc-500">generated {relativeTime(a.messaging.generated_at)}</span>}
-        >
-          {a.messaging.angles?.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-zinc-500">Angles</p>
-              <ul className="mt-1 space-y-2">
-                {a.messaging.angles.map((m, i) => (
-                  <li key={i} className="text-sm">
-                    {m.angle}
-                    <p className="text-xs text-zinc-500">grounded in: {m.grounded_in}</p>
+          <Section title={`ICP contacts (${a.icp_contacts?.length ?? 0})`}>
+            {a.icp_contacts?.length ? (
+              <ul className="grid gap-3 lg:grid-cols-2">
+                {a.icp_contacts.map((c, i) => (
+                  <li key={i} className="rounded border border-zinc-200 p-3 dark:border-zinc-700">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-medium">{c.name}</span>
+                      <ContactVerificationBadge verification={c.verification} />
+                    </div>
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400">{c.title}</p>
+                    <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-zinc-500">
+                      {c.department && <span>{c.department}</span>}
+                      {c.seniority && <span>{c.seniority}</span>}
+                      {c.email && (
+                        <a href={`mailto:${c.email}`} className="text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
+                          {c.email}
+                        </a>
+                      )}
+                      {c.linkedin_url && (
+                        <a href={c.linkedin_url} target="_blank" rel="noreferrer" className="text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
+                          LinkedIn
+                        </a>
+                      )}
+                      {c.salesforce_contact_id && <span className="font-mono">SF: {c.salesforce_contact_id}</span>}
+                    </div>
+                    {c.why_icp && <p className="mt-2 text-sm">{c.why_icp}</p>}
+                    <SourceList sources={c.sources} />
                   </li>
                 ))}
               </ul>
-            </div>
-          )}
-          {a.messaging.openers?.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-medium text-zinc-500">Openers</p>
-              <ul className="mt-1 space-y-2">
-                {a.messaging.openers.map((o, i) => (
-                  <li key={i} className="rounded border border-zinc-200 bg-zinc-50 p-2 text-sm dark:border-zinc-700 dark:bg-zinc-800/50">
-                    {o}
+            ) : (
+              <p className="text-sm text-zinc-500">No ICP contacts recorded.</p>
+            )}
+          </Section>
+
+          <Section title="Signals">
+            <SignalsTimeline signals={a.signals} />
+          </Section>
+
+          {a.news?.length > 0 && (
+            <Section title="News">
+              <ul className="space-y-3">
+                {a.news.map((n, i) => (
+                  <li key={i}>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a href={n.url} target="_blank" rel="noreferrer" className="text-sm font-medium text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
+                        {n.title}
+                      </a>
+                      {!n.date_confirmed_on_page && <Badge tone="amber">⚠ date unconfirmed</Badge>}
+                    </div>
+                    <p className="text-xs text-zinc-500">
+                      {n.publisher} · {formatDate(n.published_at)}
+                    </p>
+                    <p className="mt-1 text-sm">{n.summary}</p>
+                    {n.relevance && (
+                      <p className="mt-0.5 text-sm text-zinc-500 italic">
+                        <span className="font-medium not-italic text-zinc-600 dark:text-zinc-400">Why it matters: </span>
+                        {n.relevance}
+                      </p>
+                    )}
                   </li>
                 ))}
               </ul>
-            </div>
+            </Section>
           )}
-          {a.messaging.things_to_probe?.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-medium text-zinc-500">Things to probe (research ≠ qualification)</p>
-              <ul className="mt-1 list-inside list-disc space-y-1 text-sm">
-                {a.messaging.things_to_probe.map((t, i) => (
-                  <li key={i}>{t}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </Section>
-      )}
+        </div>
 
-      {a.discrepancies?.length > 0 && (
-        <Section title="Source discrepancies">
-          <ul className="space-y-3">
-            {a.discrepancies.map((d, i) => (
-              <li key={i} className="text-sm">
-                <span className="font-mono text-xs">{d.field}</span>
-                <ul className="mt-1 flex flex-wrap gap-2">
-                  {d.values.map((v, j) => (
-                    <li key={j}>
-                      <Badge tone="gray">
-                        {v.source}: {String(v.value)}
-                        {v.as_of && ` (${v.as_of})`}
-                      </Badge>
+        {/* Reference column: the facts behind the working material */}
+        <div className="min-w-0 space-y-4">
+          <Section title="Salesforce" aside={<span className="text-xs text-zinc-500">synced {relativeTime(sf.synced_at)}</span>}>
+            <dl className="grid grid-cols-2 gap-3">
+              <Field label="Account ID">
+                <span className="font-mono text-xs">{sf.account_id}</span>
+              </Field>
+              <Field label="Industry">{sf.industry}</Field>
+              <Field label="Employees (CRM)">{sf.number_of_employees?.toLocaleString()}</Field>
+              <Field label="Billing">
+                {[sf.billing_city, sf.billing_state, sf.billing_country].filter(Boolean).join(', ') || '—'}
+              </Field>
+            </dl>
+            {sf.bdr_notes && (
+              <div className="mt-3">
+                <p className="text-xs text-zinc-500">BDR notes</p>
+                <Prose text={sf.bdr_notes} className="mt-0.5 text-sm" />
+              </div>
+            )}
+            {sf.open_opportunities?.length > 0 && (
+              <div className="mt-3">
+                <p className="text-xs font-medium text-zinc-500">Open opportunities</p>
+                <ul className="mt-1 space-y-2">
+                  {sf.open_opportunities.map((o) => (
+                    <li key={o.id} className="rounded border border-zinc-200 p-2 text-sm dark:border-zinc-700">
+                      <div className="font-medium">{o.name}</div>
+                      <div className="mt-0.5 flex flex-wrap gap-x-3 text-xs text-zinc-500">
+                        <span>{o.stage}</span>
+                        {o.amount != null && <span>{formatMoney(o.amount)}</span>}
+                        {o.close_date && <span>closes {formatDate(o.close_date)}</span>}
+                        {o.owner && <span>AE: {o.owner}</span>}
+                      </div>
                     </li>
                   ))}
                 </ul>
-                <p className="mt-1 text-zinc-600 dark:text-zinc-400">{d.resolution}</p>
-              </li>
-            ))}
-          </ul>
-        </Section>
-      )}
+              </div>
+            )}
+            {sf.crm_history_notes && (
+              <div className="mt-3">
+                <p className="text-xs text-zinc-500">CRM history</p>
+                <Prose text={sf.crm_history_notes} className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400" />
+              </div>
+            )}
+          </Section>
 
-      {a.corrections_applied?.length > 0 && (
-        <Section title="Corrections applied">
-          <ul className="list-inside list-disc text-sm">
-            {a.corrections_applied.map((c, i) => (
-              <li key={i}>{c}</li>
-            ))}
-          </ul>
-        </Section>
-      )}
+          <Section title="Firmographics">
+            <dl className="grid grid-cols-2 gap-3">
+              <VerifiedValue label="Employees" vv={fg.employees} />
+              <VerifiedValue label="Revenue" vv={fg.revenue_usd} />
+              <Field label="Founded">{fg.founded_year}</Field>
+              <Field label="HQ">{fg.hq}</Field>
+              <Field label="Ownership">{fg.ownership}</Field>
+              <Field label="Categories">{fg.categories?.join(', ')}</Field>
+            </dl>
+            {fg.linkedin_url && (
+              <a href={fg.linkedin_url} target="_blank" rel="noreferrer" className="mt-2 inline-block text-xs text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
+                LinkedIn company page
+              </a>
+            )}
+          </Section>
+
+          {a.g2 && (a.g2.products?.length || a.g2.presence_summary) && (
+            <Section title="G2 presence">
+              {a.g2.products?.map((p) => (
+                <div key={p.slug} className="mb-2 flex flex-wrap items-center gap-2 text-sm">
+                  <a
+                    href={`https://www.g2.com/products/${p.slug}/reviews`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-info-500 hover:text-info-600 hover:underline dark:text-info-400"
+                  >
+                    {p.name || p.slug}
+                  </a>
+                  {p.rating != null && (
+                    <span>
+                      <span className="text-star">★</span> {p.rating} ({p.review_count} reviews)
+                    </span>
+                  )}
+                  {p.categories?.length > 0 && <span className="text-xs text-zinc-500">{p.categories.join(' · ')}</span>}
+                </div>
+              ))}
+              <Prose text={a.g2.presence_summary} />
+            </Section>
+          )}
+
+          {a.hiring && (a.hiring.open_roles_total != null || a.hiring.notes) && (
+            <Section title="Hiring" aside={a.hiring.as_of && <span className="text-xs text-zinc-500">as of {formatDate(a.hiring.as_of)}</span>}>
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                {a.hiring.open_roles_total != null && (
+                  <span>
+                    <span className="text-lg font-semibold">{a.hiring.open_roles_total}</span> open roles
+                  </span>
+                )}
+                {a.hiring.direction && (
+                  <Badge tone={a.hiring.direction === 'growing' ? 'green' : a.hiring.direction === 'shrinking' ? 'red' : 'gray'}>
+                    {a.hiring.direction}
+                  </Badge>
+                )}
+                {a.hiring.careers_url && (
+                  <a href={a.hiring.careers_url} target="_blank" rel="noreferrer" className="text-xs text-info-500 hover:text-info-600 hover:underline dark:text-info-400">
+                    careers page
+                  </a>
+                )}
+              </div>
+              {a.hiring.role_mix?.length > 0 && (
+                <p className="mt-2 text-sm">
+                  {a.hiring.role_mix.map((r) => `${r.function}: ${r.count}`).join(' · ')}
+                </p>
+              )}
+              <div className="mt-2">
+                <Prose text={a.hiring.notes} />
+              </div>
+            </Section>
+          )}
+
+          {a.gong?.available && (
+            <Section title="Gong history" aside={a.gong.retrieved_at && <span className="text-xs text-zinc-500">retrieved {relativeTime(a.gong.retrieved_at)}</span>}>
+              <Prose text={a.gong.summary} className="text-sm" />
+              {a.gong.last_call_at && <p className="mt-1 text-xs text-zinc-500">Last call: {formatDateTime(a.gong.last_call_at)}</p>}
+            </Section>
+          )}
+
+          {a.discrepancies?.length > 0 && (
+            <Section title="Source discrepancies">
+              <ul className="space-y-3">
+                {a.discrepancies.map((d, i) => (
+                  <li key={i} className="text-sm">
+                    <span className="font-mono text-xs">{d.field}</span>
+                    <ul className="mt-1 flex flex-wrap gap-2">
+                      {d.values.map((v, j) => (
+                        <li key={j}>
+                          <Badge tone="gray">
+                            {v.source}: {String(v.value)}
+                            {v.as_of && ` (${v.as_of})`}
+                          </Badge>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-zinc-600 dark:text-zinc-400">{d.resolution}</p>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
+          {a.corrections_applied?.length > 0 && (
+            <Section title="Corrections applied">
+              <ul className="list-inside list-disc text-sm">
+                {a.corrections_applied.map((c, i) => (
+                  <li key={i}>{c}</li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
