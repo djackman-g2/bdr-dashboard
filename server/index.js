@@ -71,7 +71,11 @@ app.get('/api/status', async (_req, res) => {
       last_light_refresh_at: meta.last_light_refresh_at,
       last_deep_refresh_at: meta.last_deep_refresh_at,
       nightly_light_cron: config.refresh.nightly_light_cron,
-      recent_runs: (meta.runs ?? []).slice(-10).reverse(),
+      // Sort by start time, not array position — headless runs don't always
+      // append their entry at the end of runs[].
+      recent_runs: [...(meta.runs ?? [])]
+        .sort((a, b) => Date.parse(b.started ?? 0) - Date.parse(a.started ?? 0))
+        .slice(0, 10),
     })
   } catch (err) {
     res.status(500).json({ error: err.message })

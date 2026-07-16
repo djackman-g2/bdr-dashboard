@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { relativeTime } from '../lib/format.js'
 
 // Confidence as a quiet dot — the rail is scanned, not read.
@@ -8,16 +8,33 @@ const CONFIDENCE_DOT = {
   low: 'bg-brand-400',
 }
 
+const STATUS_FILTERS = [
+  { key: 'all', label: 'All', match: () => true },
+  { key: 'researched', label: 'Researched', match: (a) => a.status === 'active' },
+  { key: 'pending', label: 'Pending', match: (a) => a.status === 'pending_research' },
+  { key: 'archived', label: 'Archived', match: (a) => a.status === 'archived' },
+]
+
 export default function AccountList({ index, query, selected, onOpen }) {
   const accounts = index?.accounts ?? []
+  const [statusKey, setStatusKey] = useState('all')
+  const [industry, setIndustry] = useState('')
+
+  const industries = useMemo(
+    () => [...new Set(accounts.map((a) => a.industry).filter(Boolean))].sort(),
+    [accounts]
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return accounts
-    return accounts.filter((a) =>
-      [a.name, a.domain, a.industry, a.top_signal].filter(Boolean).some((f) => f.toLowerCase().includes(q)),
+    const statusMatch = STATUS_FILTERS.find((s) => s.key === statusKey)?.match ?? (() => true)
+    return accounts.filter(
+      (a) =>
+        statusMatch(a) &&
+        (!industry || a.industry === industry) &&
+        (!q || [a.name, a.domain, a.industry, a.top_signal].filter(Boolean).some((f) => f.toLowerCase().includes(q)))
     )
-  }, [accounts, query])
+  }, [accounts, query, statusKey, industry])
 
   if (!accounts.length) {
     return <p className="mt-10 text-center text-sm text-zinc-500">No accounts in the index yet.</p>
@@ -25,6 +42,37 @@ export default function AccountList({ index, query, selected, onOpen }) {
 
   return (
     <div>
+      <div className="flex flex-wrap items-center gap-1 px-3 pt-2">
+        {STATUS_FILTERS.map((s) => (
+          <button
+            key={s.key}
+            onClick={() => setStatusKey(s.key)}
+            aria-pressed={statusKey === s.key}
+            className={`rounded-full border px-2 py-0.5 text-[11px] font-medium transition ${
+              statusKey === s.key
+                ? 'border-primary-500 bg-primary-100 text-primary-700 dark:border-primary-500 dark:bg-primary-950/60 dark:text-primary-300'
+                : 'border-zinc-300 text-zinc-500 hover:border-zinc-400 dark:border-zinc-700 dark:hover:border-zinc-500'
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+      <div className="px-3 pt-1.5">
+        <select
+          value={industry}
+          onChange={(e) => setIndustry(e.target.value)}
+          aria-label="Filter by industry"
+          className="w-full rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-600 outline-none focus:border-primary-600 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400 dark:focus:border-primary-400"
+        >
+          <option value="">All industries</option>
+          {industries.map((i) => (
+            <option key={i} value={i}>
+              {i}
+            </option>
+          ))}
+        </select>
+      </div>
       <p className="px-3 pt-2 pb-1 text-[11px] text-zinc-500">
         {filtered.length} of {accounts.length} account{accounts.length === 1 ? '' : 's'}
       </p>

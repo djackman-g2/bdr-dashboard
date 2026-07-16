@@ -26,6 +26,77 @@ function useTheme() {
   return [dark, setDark]
 }
 
+// One recent-run row: click to expand the full run record. Account names
+// link through to their pages (runs store slugs; failures store the query).
+function RunRow({ run, index, navigate }) {
+  const [open, setOpen] = useState(false)
+  const mins =
+    run.started && run.finished ? ((Date.parse(run.finished) - Date.parse(run.started)) / 60000).toFixed(1) : null
+  const findAccount = (t) => (index?.accounts ?? []).find((a) => a.slug === t || a.domain === t)
+  const touched = run.accounts_touched ?? []
+  return (
+    <li className="rounded border border-transparent">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-full flex-wrap items-center gap-2 rounded px-1 py-1 text-left text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+      >
+        <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${run.errors?.length ? 'bg-warning-500' : 'bg-success-500'}`} />
+        <span className="font-medium">{touched.join(', ') || run.mode}</span>
+        <span className="text-xs text-zinc-500">
+          {run.mode} · {relativeTime(run.finished ?? run.started)}
+          {mins && ` · ${mins} min`}
+          {run.errors?.length ? ` · ${run.errors.length} note${run.errors.length === 1 ? '' : 's'}` : ''}
+        </span>
+        <span className="ml-auto text-xs text-zinc-400">{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div className="mt-1 mb-2 ml-4 space-y-2 border-l border-zinc-200 pl-3 text-sm dark:border-zinc-700">
+          <p className="text-xs text-zinc-500">
+            {run.id && <span className="font-mono">{run.id} · </span>}
+            trigger: {run.trigger ?? '—'} · started {formatDateTime(run.started)}
+            {run.finished && ` · finished ${formatDateTime(run.finished)}`}
+            {run.credits_consuming_calls?.length > 0 &&
+              ` · ${run.credits_consuming_calls.length} paid call${run.credits_consuming_calls.length === 1 ? '' : 's'} (${[...new Set(run.credits_consuming_calls.map((c) => c.tool))].join(', ')})`}
+          </p>
+          {touched.length > 0 && (
+            <p className="flex flex-wrap gap-x-2 text-xs">
+              {touched.map((t) => {
+                const acc = findAccount(t)
+                return acc ? (
+                  <button
+                    key={t}
+                    onClick={() => navigate(acc.slug)}
+                    className="text-info-500 hover:text-info-600 hover:underline dark:text-info-400"
+                  >
+                    {acc.name}
+                  </button>
+                ) : (
+                  <span key={t} className="text-zinc-500">{t}</span>
+                )
+              })}
+            </p>
+          )}
+          {run.errors?.length > 0 && (
+            <ul className="list-outside list-disc space-y-1 pl-4 text-xs text-warning-700 dark:text-warning-300">
+              {run.errors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          )}
+          {run.notes?.length > 0 && (
+            <ul className="list-outside list-disc space-y-1 pl-4 text-xs text-zinc-600 dark:text-zinc-400">
+              {(Array.isArray(run.notes) ? run.notes : [run.notes]).map((n, i) => (
+                <li key={i}>{n}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </li>
+  )
+}
+
 // Workbench home — fills the detail pane when no account is open.
 function Home({ suggestions, index, status, navigate, refresh, jobFor }) {
   const researched = (index?.accounts ?? []).filter((a) => a.status === 'active').length
@@ -49,16 +120,9 @@ function Home({ suggestions, index, status, navigate, refresh, jobFor }) {
       {status?.recent_runs?.length > 0 && (
         <section className="mt-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
           <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">Recent runs</h2>
-          <ul className="mt-2 space-y-1.5">
-            {status.recent_runs.slice(0, 6).map((r, i) => (
-              <li key={i} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.errors?.length ? 'bg-warning-500' : 'bg-success-500'}`} />
-                <span className="font-medium">{(r.accounts_touched ?? []).join(', ') || r.mode}</span>
-                <span className="text-xs text-zinc-500">
-                  {r.mode} · {relativeTime(r.finished ?? r.started)}
-                  {r.errors?.length ? ` · ${r.errors.length} note${r.errors.length === 1 ? '' : 's'}` : ''}
-                </span>
-              </li>
+          <ul className="mt-2 space-y-0.5">
+            {status.recent_runs.slice(0, 8).map((r, i) => (
+              <RunRow key={r.id ?? i} run={r} index={index} navigate={navigate} />
             ))}
           </ul>
         </section>
