@@ -40,7 +40,10 @@ Rank candidates. All ranking signals must be free calls:
 
 Then check `config.refresh.auto_queue_deep`:
 
-- **`false` (current default — the user hand-picks their daily accounts):** queue NOTHING. Instead write the top 10 ranked candidates into the run entry as a `notes` line — `"deep suggestions: 1. <domain> (tier1: open opp $X) 2. <domain> (tier3: activity <date>) …"` — so the morning shortlist is waiting in the dashboard. Also note the total still pending.
+- **`false` (current default — the user hand-picks their daily accounts):** queue NOTHING. Instead:
+  1. Write `data/suggestions.json` (the dashboard renders it as the "Today's picks" panel):
+     `{"generated_at": "<ISO>", "pending_total": <n>, "suggestions": [{"slug": "...", "domain": "...", "name": "...", "tier": "open_opp"|"g2_intent"|"recent_activity"|"alphabetical", "reason": "<one line, e.g. 'open opp $18k (Madwire - FVC, closes 2026-08-20)'>"}]}` — top 10, rank order.
+  2. Also add a short `notes` line to the run entry: `"deep suggestions written to data/suggestions.json (top: <first 3 domains>); <n> still pending"`.
 - **`true`:** POST sequentially in rank order (queue and caps live in the server — do not research inline):
 
 ```

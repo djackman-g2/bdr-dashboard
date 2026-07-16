@@ -18,6 +18,11 @@ export function fetchMeta() {
   return fetchJson('/data/meta.json')
 }
 
+// Nightly-ranked deep-research shortlist; absent until the first ranked run.
+export function fetchSuggestions() {
+  return fetchJson('/data/suggestions.json').catch(() => null)
+}
+
 // ---- Phase 3 server API (queue status, refresh, live events) ----
 
 export function fetchStatus() {

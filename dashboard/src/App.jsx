@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import AccountList from './components/AccountList.jsx'
 import AccountDetail from './components/AccountDetail.jsx'
-import { fetchIndex, fetchAccount, fetchStatus, requestRefresh, subscribeEvents } from './lib/data.js'
+import TodaysPicks from './components/TodaysPicks.jsx'
+import { fetchIndex, fetchAccount, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { formatDateTime } from './lib/format.js'
 
 function useHashRoute() {
@@ -37,11 +38,19 @@ export default function App() {
   const slugRef = useRef(slug)
   slugRef.current = slug
 
+  const [suggestions, setSuggestions] = useState(null)
+
   const loadIndex = useCallback(() => {
     fetchIndex().then(setIndex).catch((e) => setError(e.message))
   }, [])
 
   useEffect(loadIndex, [loadIndex])
+
+  const loadSuggestions = useCallback(() => {
+    fetchSuggestions().then(setSuggestions)
+  }, [])
+
+  useEffect(loadSuggestions, [loadSuggestions])
 
   const loadStatus = useCallback(() => {
     fetchStatus().then(setStatus).catch(() => setStatus(null))
@@ -53,6 +62,7 @@ export default function App() {
     return subscribeEvents({
       onData: (e) => {
         if (e.path.endsWith('index.json')) loadIndex()
+        if (e.path.endsWith('suggestions.json')) loadSuggestions()
         const current = slugRef.current
         if (current && e.path.endsWith(`accounts/${current}.json`)) {
           fetchAccount(current).then(setAccount).catch(() => {})
@@ -64,7 +74,7 @@ export default function App() {
         if (e.type === 'finished') setNotice({ tone: 'ok', text: `Refresh finished: ${e.job.query}` })
       },
     })
-  }, [loadIndex, loadStatus])
+  }, [loadIndex, loadStatus, loadSuggestions])
 
   const refresh = useCallback((q, mode, opts) => {
     setNotice(null)
@@ -170,6 +180,16 @@ export default function App() {
             placeholder='Search accounts… (press "/" to focus)'
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm outline-none focus:border-primary-600 focus:ring-2 focus:ring-primary-300/50 dark:border-zinc-700 dark:bg-zinc-900 dark:focus:border-primary-400 dark:focus:ring-primary-700/40"
           />
+          {!query && (
+            <TodaysPicks
+              suggestions={suggestions}
+              index={index}
+              onOpen={(s) => navigate(s)}
+              onQueue={status ? (domain) => refresh(domain, 'deep') : null}
+              jobFor={jobFor}
+              deepCap={status?.deep_cap}
+            />
+          )}
           {index ? (
             <AccountList index={index} query={query} onOpen={(s) => navigate(s)} />
           ) : (
