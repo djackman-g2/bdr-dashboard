@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import AccountList from './components/AccountList.jsx'
 import AccountDetail from './components/AccountDetail.jsx'
 import TodaysPicks from './components/TodaysPicks.jsx'
+import PendingAccount from './components/PendingAccount.jsx'
 import { fetchIndex, fetchAccount, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { formatDateTime } from './lib/format.js'
 
@@ -65,7 +66,14 @@ export default function App() {
         if (e.path.endsWith('suggestions.json')) loadSuggestions()
         const current = slugRef.current
         if (current && e.path.endsWith(`accounts/${current}.json`)) {
-          fetchAccount(current).then(setAccount).catch(() => {})
+          // First deep run just landed for a previously-pending account —
+          // clear the 404 error so the full detail view takes over.
+          fetchAccount(current)
+            .then((a) => {
+              setAccount(a)
+              setError(null)
+            })
+            .catch(() => {})
         }
       },
       onJob: (e) => {
@@ -88,6 +96,11 @@ export default function App() {
     (q) => status?.running?.query === q || status?.queue?.some((j) => j.query === q),
     [status]
   )
+
+  // Account file 404s but the index knows the slug → light-run stub only,
+  // no deep research yet. Render the pending view instead of an error.
+  const pendingEntry =
+    slug && !account && error ? ((index?.accounts ?? []).find((a) => a.slug === slug) ?? null) : null
 
   useEffect(() => {
     if (!slug) {
@@ -160,7 +173,7 @@ export default function App() {
         </div>
       )}
 
-      {error && (
+      {error && !pendingEntry && !(slug && !index) && (
         <div className="mt-4 rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
           Failed to load data: {error}
         </div>
@@ -206,6 +219,13 @@ export default function App() {
               onBack={() => navigate(null)}
               onRefresh={status ? (mode, opts) => refresh(account.domain, mode, opts) : null}
               refreshPending={jobFor(account.domain)}
+            />
+          ) : pendingEntry ? (
+            <PendingAccount
+              entry={pendingEntry}
+              onBack={() => navigate(null)}
+              onRefresh={status ? (mode, opts) => refresh(pendingEntry.domain, mode, opts) : null}
+              refreshPending={jobFor(pendingEntry.domain)}
             />
           ) : (
             !error && <p className="mt-10 text-center text-sm text-zinc-500">Loading {slug}…</p>
