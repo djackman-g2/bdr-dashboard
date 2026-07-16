@@ -240,8 +240,11 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col">
-      {/* ---- Top bar ---- */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-zinc-200 bg-white px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-900">
+      {/* ---- Top bar: G2 brand wallpaper banner behind a legibility scrim ---- */}
+      <header className="relative shrink-0 overflow-hidden border-b border-zinc-200 dark:border-zinc-800">
+        <img src="/banner.jpg" alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover object-[50%_40%]" />
+        <div className="absolute inset-0 bg-gradient-to-r from-white/90 via-white/70 to-white/35 dark:from-zinc-950/90 dark:via-zinc-950/70 dark:to-zinc-950/35" />
+        <div className="relative flex items-center gap-3 px-4 py-3">
         <button onClick={() => navigate(null)} className="flex items-center gap-2 text-base font-bold tracking-tight">
           <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-brand-500 text-[10px] font-extrabold text-white">
             G2
@@ -261,11 +264,12 @@ export default function App() {
         {!status && <span className="text-xs text-zinc-500">read-only — server offline</span>}
         <button
           onClick={() => setDark(!dark)}
-          className="ml-auto rounded-md border border-zinc-300 px-2 py-1 text-xs text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          className="ml-auto rounded-md border border-zinc-300 bg-white/80 px-2 py-1 text-xs text-zinc-600 backdrop-blur hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800"
           title="Toggle theme"
         >
           {dark ? '☀︎ light' : '☾ dark'}
         </button>
+        </div>
       </header>
 
       {/* ---- Two-pane workbench ---- */}
