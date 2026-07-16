@@ -41,7 +41,8 @@
     "paid_tools": ["account_research", "enrich_contacts", "contact_research", "enrich_companies"]
   },
   "chat": {
-    "_comment": "Phase 6 account chat. Direct Anthropic API, no MCPs. Key lives ONLY in the macOS Keychain under keychain_service — add it with: security add-generic-password -a \"$USER\" -s bdr-dashboard-anthropic -w",
+    "_comment": "Phase 6 account chat. Direct Anthropic API (or a LiteLLM proxy via base_url — must expose the Anthropic /v1/messages surface), no MCPs. Key lives ONLY in the macOS Keychain under keychain_service — add it with: security add-generic-password -U -a \"$USER\" -s bdr-dashboard-anthropic -w",
+    "base_url": "https://llmproxy.g2.com",
     "model": "claude-opus-4-8",
     "max_tokens": 16000,
     "max_history_messages": 40,

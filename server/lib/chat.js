@@ -28,7 +28,14 @@ function readKeychainKey() {
 }
 
 async function getClient() {
-  if (!client) client = new Anthropic({ apiKey: await readKeychainKey() })
+  if (!client) {
+    client = new Anthropic({
+      apiKey: await readKeychainKey(),
+      // Optional LiteLLM/proxy gateway (config.chat.base_url) — must expose the
+      // Anthropic /v1/messages surface. null/absent = api.anthropic.com.
+      ...(chatConfig.base_url ? { baseURL: chatConfig.base_url } : {}),
+    })
+  }
   return client
 }
 
