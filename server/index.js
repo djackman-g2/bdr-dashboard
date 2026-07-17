@@ -82,7 +82,7 @@ app.get('/api/status', async (_req, res) => {
   }
 })
 
-const SECTIONS = ['news', 'hiring', 'g2', 'gong', 'messaging']
+const SECTIONS = ['news', 'hiring', 'g2', 'gong', 'messaging', 'contacts']
 
 app.post('/api/refresh', async (req, res) => {
   const { query, mode, origin, linkedin, section } = req.body ?? {}

@@ -6,7 +6,15 @@ import SfActivity from './SfActivity.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
 import { toBullets } from '../lib/prose.js'
 
-function Section({ title, children, aside, onSectionRefresh, refreshPending }) {
+function Section({
+  title,
+  children,
+  aside,
+  onSectionRefresh,
+  refreshPending,
+  refreshLabel = '⟳ refresh',
+  refreshTitle = 'Refresh just this section (fast, free — no enrichment credits, no deep-cap slot)',
+}) {
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-3 flex items-center gap-2 border-l-2 border-brand-500 pl-2">
@@ -16,10 +24,10 @@ function Section({ title, children, aside, onSectionRefresh, refreshPending }) {
           <button
             onClick={onSectionRefresh}
             disabled={refreshPending}
-            title="Refresh just this section (fast, free — no enrichment credits, no deep-cap slot)"
+            title={refreshTitle}
             className="ml-auto rounded-md border border-primary-400 px-2 py-0.5 text-xs font-semibold text-primary-700 hover:bg-primary-600 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-primary-700 dark:text-primary-300 dark:hover:text-white"
           >
-            {refreshPending ? '⟳ queued…' : '⟳ refresh'}
+            {refreshPending ? '⟳ queued…' : refreshLabel}
           </button>
         )}
       </div>
@@ -241,7 +249,13 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
             </Section>
           )}
 
-          <Section title={`ICP contacts (${a.icp_contacts?.length ?? 0})`}>
+          <Section
+            title={`ICP contacts (${a.icp_contacts?.length ?? 0})`}
+            onSectionRefresh={onRefresh && (() => onRefresh('section', { section: 'contacts' }))}
+            refreshPending={refreshPending}
+            refreshLabel="⟳ find more"
+            refreshTitle="Find more contacts via ZoomInfo: free search, then paid enrich on up to 5 new best-fit contacts (logged). Adds to the list — existing contacts are never touched."
+          >
             {a.icp_contacts?.length ? (
               <ul className="grid gap-3 lg:grid-cols-2">
                 {a.icp_contacts.map((c, i) => (

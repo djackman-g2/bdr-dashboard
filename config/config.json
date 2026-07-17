@@ -38,6 +38,7 @@
   },
   "zoominfo": {
     "log_every_paid_call": true,
+    "max_section_contact_enrich": 5,
     "paid_tools": ["account_research", "enrich_contacts", "contact_research", "enrich_companies"]
   },
   "chat": {

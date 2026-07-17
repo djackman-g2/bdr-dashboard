@@ -120,9 +120,18 @@ async function processNext() {
   // human asked for THIS deep run AND opted it into LinkedIn verification.
   // Light runs and anything auto-queued never get it — LinkedIn automation
   // must not run on a schedule or by default.
+  const disallowed = []
   if (!(job.mode === 'deep' && job.origin === 'user' && job.linkedin)) {
-    args.push('--disallowedTools', 'mcp__playwright__*')
+    disallowed.push('mcp__playwright__*')
   }
+  // Same hard-guarantee idea for ZoomInfo credits: activity runs and every
+  // section run EXCEPT contacts are free by contract. Only the contacts
+  // section (capped enrich, see config.zoominfo.max_section_contact_enrich)
+  // and light/deep pipeline runs may reach ZoomInfo at all.
+  if (job.mode === 'activity' || (job.mode === 'section' && job.section !== 'contacts')) {
+    disallowed.push('mcp__claude_ai_ZoomInfo__*')
+  }
+  if (disallowed.length) args.push('--disallowedTools', disallowed.join(','))
 
   const logFile = path.join(paths.logsDir, `${job.id}.log`)
   const log = fs.createWriteStream(logFile, { flags: 'a' })
