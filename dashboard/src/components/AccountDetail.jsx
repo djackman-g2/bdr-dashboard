@@ -6,12 +6,22 @@ import SfActivity from './SfActivity.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
 import { toBullets } from '../lib/prose.js'
 
-function Section({ title, children, aside }) {
+function Section({ title, children, aside, onSectionRefresh, refreshPending }) {
   return (
     <section className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="mb-3 flex items-center gap-2 border-l-2 border-brand-500 pl-2">
         <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">{title}</h2>
         {aside}
+        {onSectionRefresh && (
+          <button
+            onClick={onSectionRefresh}
+            disabled={refreshPending}
+            title="Refresh just this section (fast, free — no enrichment credits, no deep-cap slot)"
+            className="ml-auto rounded-md border border-primary-400 px-2 py-0.5 text-xs font-semibold text-primary-700 hover:bg-primary-600 hover:text-white disabled:cursor-default disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-primary-700 dark:text-primary-300 dark:hover:text-white"
+          >
+            {refreshPending ? '⟳ queued…' : '⟳ refresh'}
+          </button>
+        )}
       </div>
       {children}
     </section>
@@ -190,6 +200,8 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
             <Section
               title="Messaging"
               aside={a.messaging.generated_at && <span className="text-xs text-zinc-500">generated {relativeTime(a.messaging.generated_at)}</span>}
+              onSectionRefresh={onRefresh && (() => onRefresh('section', { section: 'messaging' }))}
+              refreshPending={refreshPending}
             >
               {a.messaging.angles?.length > 0 && (
                 <div>
@@ -269,7 +281,11 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
           </Section>
 
           {a.news?.length > 0 && (
-            <Section title="News">
+            <Section
+              title="News"
+              onSectionRefresh={onRefresh && (() => onRefresh('section', { section: 'news' }))}
+              refreshPending={refreshPending}
+            >
               <ul className="space-y-3">
                 {a.news.map((n, i) => (
                   <li key={i}>
@@ -360,7 +376,11 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
           </Section>
 
           {a.g2 && (a.g2.products?.length || a.g2.presence_summary) && (
-            <Section title="G2 presence">
+            <Section
+              title="G2 presence"
+              onSectionRefresh={onRefresh && (() => onRefresh('section', { section: 'g2' }))}
+              refreshPending={refreshPending}
+            >
               {a.g2.products?.map((p) => (
                 <div key={p.slug} className="mb-2 flex flex-wrap items-center gap-2 text-sm">
                   <a
@@ -384,7 +404,12 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
           )}
 
           {a.hiring && (a.hiring.open_roles_total != null || a.hiring.notes) && (
-            <Section title="Hiring" aside={a.hiring.as_of && <span className="text-xs text-zinc-500">as of {formatDate(a.hiring.as_of)}</span>}>
+            <Section
+              title="Hiring"
+              aside={a.hiring.as_of && <span className="text-xs text-zinc-500">as of {formatDate(a.hiring.as_of)}</span>}
+              onSectionRefresh={onRefresh && (() => onRefresh('section', { section: 'hiring' }))}
+              refreshPending={refreshPending}
+            >
               <div className="flex flex-wrap items-center gap-3 text-sm">
                 {a.hiring.open_roles_total != null && (
                   <span>
@@ -414,7 +439,12 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
           )}
 
           {a.gong?.available && (
-            <Section title="Gong history" aside={a.gong.retrieved_at && <span className="text-xs text-zinc-500">retrieved {relativeTime(a.gong.retrieved_at)}</span>}>
+            <Section
+              title="Gong history"
+              aside={a.gong.retrieved_at && <span className="text-xs text-zinc-500">retrieved {relativeTime(a.gong.retrieved_at)}</span>}
+              onSectionRefresh={onRefresh && (() => onRefresh('section', { section: 'gong' }))}
+              refreshPending={refreshPending}
+            >
               <Prose text={a.gong.summary} className="text-sm" />
               {a.gong.last_call_at && <p className="mt-1 text-xs text-zinc-500">Last call: {formatDateTime(a.gong.last_call_at)}</p>}
             </Section>

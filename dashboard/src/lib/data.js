@@ -41,7 +41,13 @@ export async function requestRefresh(query, mode, opts = {}) {
   const res = await fetch('/api/refresh', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, mode, origin: 'user', linkedin: opts.linkedin === true }),
+    body: JSON.stringify({
+      query,
+      mode,
+      origin: 'user',
+      linkedin: opts.linkedin === true,
+      ...(opts.section ? { section: opts.section } : {}),
+    }),
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(body.error ?? `refresh failed: HTTP ${res.status}`)

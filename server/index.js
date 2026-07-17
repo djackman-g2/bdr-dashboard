@@ -82,16 +82,21 @@ app.get('/api/status', async (_req, res) => {
   }
 })
 
+const SECTIONS = ['news', 'hiring', 'g2', 'gong', 'messaging']
+
 app.post('/api/refresh', async (req, res) => {
-  const { query, mode, origin, linkedin } = req.body ?? {}
+  const { query, mode, origin, linkedin, section } = req.body ?? {}
   if (typeof query !== 'string' || !query.trim() || query.length > 200) {
     return res.status(400).json({ error: 'query must be a non-empty string (domain, name, SF Id, or "ALL")' })
   }
-  if (mode !== 'light' && mode !== 'deep' && mode !== 'activity') {
-    return res.status(400).json({ error: 'mode must be "light", "deep", or "activity"' })
+  if (mode !== 'light' && mode !== 'deep' && mode !== 'activity' && mode !== 'section') {
+    return res.status(400).json({ error: 'mode must be "light", "deep", "activity", or "section"' })
   }
   if (query.trim() === 'ALL' && mode !== 'light') {
     return res.status(400).json({ error: `${mode} refresh is per-account only — no ${mode} ALL` })
+  }
+  if (mode === 'section' && !SECTIONS.includes(section)) {
+    return res.status(400).json({ error: `section must be one of: ${SECTIONS.join(', ')}` })
   }
   // origin "user" = a human explicitly asked (dashboard button). Omitted or
   // anything else = "auto" (safe default): the run is spawned with Playwright
@@ -103,7 +108,7 @@ app.post('/api/refresh', async (req, res) => {
     return res.status(400).json({ error: 'linkedin, if given, must be a boolean' })
   }
   try {
-    const result = await enqueue({ query: query.trim(), mode, trigger: 'api', origin, linkedin })
+    const result = await enqueue({ query: query.trim(), mode, trigger: 'api', origin, linkedin, section })
     if (result.error) return res.status(result.status).json(result)
     res.status(202).json(result)
   } catch (err) {

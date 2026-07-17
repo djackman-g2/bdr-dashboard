@@ -24,8 +24,8 @@ function emit(type, job, extra = {}) {
 
 export function publicJob(job) {
   if (!job) return null
-  const { id, query, mode, trigger, origin, status, enqueued_at, started_at } = job
-  return { id, query, mode, trigger, origin, status, enqueued_at, started_at }
+  const { id, query, mode, trigger, origin, status, enqueued_at, started_at, section } = job
+  return { id, query, mode, trigger, origin, status, enqueued_at, started_at, ...(section ? { section } : {}) }
 }
 
 export async function queueSnapshot() {
@@ -52,9 +52,11 @@ export async function deepCapStatus() {
 // requests — is 'auto'. linkedin: true = the human explicitly opted this run
 // into LinkedIn verification. Playwright requires deep AND user AND linkedin —
 // LinkedIn volume stays a deliberate per-run choice, never a default.
-export async function enqueue({ query, mode, trigger, origin, linkedin }) {
+export async function enqueue({ query, mode, trigger, origin, linkedin, section }) {
   const meta = await readMeta()
-  const dupe = (meta.job_queue ?? []).find((j) => j.query === query && j.mode === mode)
+  const dupe = (meta.job_queue ?? []).find(
+    (j) => j.query === query && j.mode === mode && (mode !== 'section' || j.section === section)
+  )
   if (dupe) return { error: 'duplicate', status: 409, job: publicJob(dupe) }
 
   if (mode === 'deep') {
@@ -71,6 +73,7 @@ export async function enqueue({ query, mode, trigger, origin, linkedin }) {
     trigger,
     origin: origin === 'user' ? 'user' : 'auto',
     linkedin: linkedin === true,
+    ...(mode === 'section' ? { section } : {}),
     status: 'queued',
     enqueued_at: nowIso(),
   }
@@ -218,7 +221,9 @@ async function buildPrompt(job) {
       ? 'refresh-all-light.md'
       : job.mode === 'activity'
         ? 'refresh-activity.md'
-        : 'refresh-account.md'
+        : job.mode === 'section'
+          ? 'refresh-section.md'
+          : 'refresh-account.md'
   const body = await fsp.readFile(path.join(paths.promptsDir, file), 'utf8')
   return (
     body +
@@ -226,6 +231,7 @@ async function buildPrompt(job) {
     `- Job id: ${job.id} (use as the run entry id in data/meta.json)\n` +
     `- Account identifier: ${job.query}\n` +
     `- Run mode: ${job.mode}\n` +
+    (job.section ? `- Target section: ${job.section}\n` : '') +
     `- Trigger: ${job.trigger}\n` +
     `- Origin: ${job.origin}\n` +
     `- LinkedIn/Playwright allowed this run: ${job.mode === 'deep' && job.origin === 'user' && job.linkedin ? 'YES (deep, user-requested, LinkedIn opted-in — verification only, respect config.linkedin caps)' : 'NO (tool is hard-blocked; record skipped verification as sources_missing kind=deferred_by_design)'}\n`
