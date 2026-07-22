@@ -1,0 +1,134 @@
+# Phase 7G Plan — Outbound scale addendum (drafted 2026-07-21)
+
+Extends the approved Phase 7 plan. Read `CLAUDE.md` first — every standing rule applies
+(Salesforce read-only; no LinkedIn in scheduled runs; no G2 intent citations in outreach;
+grounded_in mandatory on every messaging line; key material in Keychain only).
+
+Sequencing: 7G-1 can ship before or alongside 7B (it feeds 7B's messaging step).
+7G-2 amends 7B steps 1 and 4 — fold it in rather than doing 7B twice.
+7G-3 depends on 7G-2's persona library but NOT on 7B's contact verification work.
+
+## 7G-1 — AI-visibility module (the AEO play, automated)
+
+Goal: every account dossier answers "does this company show up when a buyer asks an LLM
+for a shortlist in their category — and who gets cited?" This is the raw material for the
+best-performing subject line ("Looked up {company} on ChatGPT") and it currently gets
+produced by hand, per account, at send time.
+
+1. **Schema:** new top-level optional section `ai_visibility`:
+   - `queries: [{prompt, ran_at, model, company_appeared: bool, companies_returned: [string],
+     g2_cited: bool, sources_cited: [string], raw_excerpt}]`
+   - `summary: string|null` — one line, the wedge ("absent from all 3 shortlist queries;
+     Competitor X appears in 3/3; G2 cited in 2/3")
+   - `as_of: date-time`
+   Not in `required` — old dossiers stay valid, no migration.
+2. **Runner:** reuse the chat backend client (`server/lib/chat.js` — LiteLLM proxy, Keychain
+   key). NOT an MCP call, NOT part of headless Claude's tool surface: a plain server-side
+   function `lib/aiVisibility.js` that sends 2-3 canned prompts and parses the responses.
+   Canned prompts, built from dossier data already on disk:
+   - "What are the best {g2.products[0].categories[0]} tools?" (shortlist)
+   - "Compare {name} vs {top competitor}" (head-to-head; competitor from g2 categories —
+     if unknown, skip this query, never invent a competitor)
+   - Optional: "{name} reviews" (citation check)
+   Parsing: company_appeared = name/domain match in response; sources_cited = URLs/domains
+   mentioned. Store the raw excerpt — the dashboard renders it, and it's screenshot-equivalent
+   evidence for the email.
+3. **Exposure:** (a) new `section` mode value `ai_visibility` — but since the runner is
+   server-side (no MCPs needed), implement as a direct endpoint `POST /api/ai-visibility/:slug`
+   like 7B.5's messaging regenerate (ajv-validate, atomic write, section-only). Cheap enough
+   to also run automatically inside every deep refresh (server runs it after the pipeline
+   job finishes, before marking the run done). (b) Dashboard: small card in AccountDetail —
+   appeared/absent badge per query, cited sources, raw excerpt expandable, ⟳ header button.
+4. **Messaging hook:** 7B Step 10's personalization hierarchy gains a tier between contact
+   facts and account signals: for marketing/C-suite personas, `ai_visibility.summary` is the
+   default opener fact when present. `grounded_in: "ai_visibility"` traces it.
+5. **Honesty rule (non-negotiable):** if the company DOES appear in the shortlist, the angle
+   flips to "you're showing up — here's who controls whether that continues" — never
+   misrepresent the result. `company_appeared` is data, not copy.
+6. Verify: run on the 5 researched accounts; eyeball raw excerpts vs what a manual ChatGPT
+   check shows; confirm old dossiers still validate.
+
+Cost note: 2-3 small completions per account through the proxy. Negligible vs a deep
+refresh; fine to include in nightly-adjacent automation later (7C digest could flag
+"accounts that dropped out of shortlists" — deferred).
+
+## 7G-2 — Persona layer (amend 7B before executing it)
+
+Goal: personalization effort happens once per PERSONA, not once per contact. Contact-level
+copy = persona skeleton × account payload × contact facts.
+
+1. **Schema:** `icp_contacts[].persona`: enum
+   `marketing_leader | demand_gen | pmm | revops_sales_leader | seo_aeo | partnerships |
+   customer_marketing | founder_exec | other` (nullable; assigned at verification time from
+   title/department; `other` never gets per-contact copy without a manual look).
+2. **`prompts/personas.md`** (companion to 7B.3's `style.md`): one block per persona —
+   who they are, what they care about, which dossier facts rank highest for them, angle
+   (AEO for marketing_leader/pmm/founder_exec/seo_aeo; buyer-intent-value-WITHOUT-citing-
+   intent-rows for demand_gen/revops_sales_leader — hiring velocity, review momentum, G2
+   profile gaps; co-sell/ecosystem for partnerships), subject-line pattern, CTA style.
+   Source material: the existing cold-call frameworks and callback playbook — port, don't
+   reinvent. Declan reviews/edits this file by hand; it is voice-adjacent like style.md.
+3. **7B Step 10 amendment:** messaging generation loads `style.md` + `personas.md`; every
+   generated opener/email records `persona` alongside `grounded_in`. Contacts with
+   persona=null/other get account-level angles only.
+4. **Groove contract unchanged:** still `flow.opener/subject/body/ps` — personas change what
+   fills the columns, not the column set. One Groove flow per persona (Declan, manual,
+   one-time) instead of one generic flow; the CSV export gains a persona column used only
+   to split the export into per-flow files (`{slug}-{persona}.csv`), since one Groove import
+   targets one flow.
+
+## 7G-3 — Messaging-lite tier (coverage for the long tail)
+
+Problem: messaging is deep-only; deep is 15-26 min, capped 10/day, serial → 452 accounts
+never get covered. The long tail needs sendable account-level persona emails WITHOUT
+credits, verification, or Playwright.
+
+1. **New mode `messaging-lite`** (per-account, prompt `prompts/refresh-messaging-lite.md`):
+   free tools only, hard rules identical to `section` mode (no ZoomInfo, no Playwright,
+   15-min timeout). Pipeline: SF basics (already synced) → public G2 `show_product`/
+   `show_vendor` → server-side ai_visibility run (7G-1) → ONE news search pass (free path)
+   → generate account-level messaging per persona (no named contacts, no per-contact copy)
+   → write a REDUCED dossier: required sections + g2 + ai_visibility + messaging,
+   `confidence: "low"`, `refresh_mode` gains enum value `"messaging_lite"` (schema change),
+   index `status` gains `"lite_researched"` so Today's Picks and the workbench can
+   distinguish it from real research.
+2. **Contacts for lite accounts:** come from SF contacts already on the account, exported
+   with the STANDING unverified caveat — Groove CSV export for lite accounts filters to
+   contacts with an email in SF and stamps `flow.opener` etc. from the ACCOUNT-level persona
+   copy. This knowingly relaxes 7B's verified-only export rule for lite accounts — make it
+   a separate export button ("Export lite — unverified contacts") so it is never the default
+   path, and the CSV filename says `-UNVERIFIED`. Rule 4 still applies in spirit: lite copy
+   contains nothing person-specific, so a departed contact costs a bounce, not an
+   embarrassment. Declan accepts bounce risk explicitly per export.
+3. **Batching:** `POST /api/refresh` accepts mode `messaging-lite`; nightly ranking gains a
+   config flag `refresh.auto_queue_lite` (default false initially; intended true once
+   verified) with its own daily cap `lite_daily_cap` (suggest 25 — token cost only). At 25/day
+   the whole book has sendable persona messaging in ~3 weeks, refreshing oldest-first after.
+4. Verify: lite-run 5 accounts from the alphabetical tier; confirm dossiers validate, copy
+   quality is acceptable for a template-tier send, and a lite CSV imports into a test flow.
+
+## Explicitly NOT doing (memo ideas rejected, with reasons)
+
+- **Auto-sending email:** Groove is the send/log layer, human-in-the-loop by design (7B).
+  No SMTP, no Gmail-API sending from the pipeline. The CSV is the boundary.
+- **Citing G2 buyer-intent rows in any copy:** tenant-scoping bug stands (CLAUDE.md
+  connector table). Revisit only after `list_my_products` returns data AND a seller-console
+  cross-check passes. Track separately: ping G2 MCP owners about seller scoping.
+- **Prospect enrichers / new tools (Clay etc.):** the stack already covers discovery
+  (ZoomInfo search_contacts, free) + verification (enrich_contacts/LinkedIn). The bottleneck
+  was messaging throughput, which 7G-2/7G-3 fix. Re-evaluate only if contact discovery
+  becomes the measured bottleneck.
+- **Sales Nav as the contact front door:** demote to exception handling. Deep runs source
+  contacts from ZoomInfo free search + SF, verify per standing rules; Sales Nav (via the
+  Playwright session, same constraints) only for contacts ZI can't confirm.
+
+## Metrics to watch (add to run notes / weekly rollup in 7C)
+
+- Coverage: accounts with sendable messaging (deep + lite) vs 452.
+- Per-send effort: time from "pick account" to "CSV imported" (target: minutes).
+- Reply rate by persona and by tier (deep vs lite) — Groove reports; if lite replies ≈ deep
+  replies, deep messaging effort should shrink further. Opens without replies on AEO sends →
+  test the withhold variant (name the finding, don't show the screenshot; screenshot becomes
+  the reward for the reply/call).
+- Open-triggered dialing: Groove open events are the call trigger — surface "opened in the
+  last 24h, not yet called" on the workbench (fold into 7E).
