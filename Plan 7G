@@ -1,12 +1,77 @@
-# Phase 7G Plan — Outbound scale addendum (drafted 2026-07-21)
+# Phase 7G Plan — FY27 universe + outbound scale addendum (drafted 2026-07-21)
 
-Extends the approved Phase 7 plan. Read `CLAUDE.md` first — every standing rule applies
+Extends the approved Phase 7 plan. SF facts below (field API names, account counts, WHERE
+clause) were verified live against the org on 2026-07-21 — trust them over older session
+facts. Read `CLAUDE.md` first — every standing rule applies
 (Salesforce read-only; no LinkedIn in scheduled runs; no G2 intent citations in outreach;
 grounded_in mandatory on every messaging line; key material in Keychain only).
 
-Sequencing: 7G-1 can ship before or alongside 7B (it feeds 7B's messaging step).
-7G-2 amends 7B steps 1 and 4 — fold it in rather than doing 7B twice.
+Sequencing: **7G-0 FIRST — it is a prerequisite for everything** (wrong universe = wasted
+runs on 163 accounts that left the book). 7G-1 can ship before or alongside 7B (it feeds
+7B's messaging step). 7G-2 amends 7B steps 1 and 4 — fold it in rather than doing 7B twice.
 7G-3 depends on 7G-2's persona library but NOT on 7B's contact verification work.
+
+## 7G-0 — Universe correction + 6sense-powered ranking (DO FIRST, one session)
+
+Territory changed for FY27. Verified against SF 2026-07-21: the old universe query
+(`BDR__c` alone) returns 452, but ~163 of those are owned by other AEs (Taylor Worthy 82,
+Courtney Potter 69, 2 strays) pending reassignment. The real book is **289 accounts**,
+reproduced exactly by the FY27 report filter.
+
+1. **`config.json` — new universe:**
+   ```
+   "account_universe_where": "BDR__c = '005Nw000003GH6PIAW' AND Owner.Name IN ('Sean Mahoney','Nick Cantieri') AND Type = 'Vendor - Prospect' AND Is_Ultimate_Parent_Account__c = true"
+   ```
+   Update the adjacent `notes` (still mention the future-dated LastActivityDate quirk; add
+   that non-ultimate-parent children and other-AE accounts are excluded by design — if the
+   book shifts again, this WHERE clause is the single thing to edit).
+2. **`config.json` — add to `account_fields`** (API names verified against FieldDefinition
+   2026-07-21):
+   ```
+   X6sense_Account_Buying_Stage__c, X6sense_Account_Intent_Score__c, X6sense_6QA__c,
+   Total_Hierarchy_ACV__c, Total_Hierarchy_SOM__c, Available_SOM__c,
+   Number_Active_Products_In_Hierarchy__c, Number_of_Claimed_Profiles__c,
+   Profile_Completeness_Percent__c, Total_Vendor_Reviews_Last_60_Days__c
+   ```
+3. **Schema:** extend `salesforce` section with matching snake_case optional fields
+   (`buying_stage_6sense`, `intent_score_6sense`, `is_6qa`, `total_hierarchy_acv`,
+   `total_hierarchy_som`, `available_som`, `active_products_in_hierarchy`,
+   `claimed_profiles`, `profile_completeness_pct`, `reviews_last_60_days`).
+   `salesforce` already allows `additionalProperties: true`, so old dossiers stay valid;
+   adding named properties documents the contract for the UI.
+4. **`prompts/refresh-all-light.md` Step 3 — rebuild the ranking tiers** (all free SOQL,
+   already in the universe pull — no extra calls):
+   1. Open opportunity (unchanged, largest amount first)
+   2. 6sense Buying Stage = `Purchase`, then `Decision` (intent score desc within stage)
+   3. 6sense Intent Score desc (nonzero), 6QA-flagged accounts first
+   4. Buying Stage = `Consideration`, `Available_SOM__c` desc within
+   5. Recent REAL CRM activity (≤ today, last 90d — future-date rule unchanged)
+   6. Alphabetical
+   **DELETE the G2 `browse_buyer_intent` tier entirely** — tenant-scoping bug stands
+   (CLAUDE.md connector table); 6sense-from-SF replaces it with working data at zero cost.
+   Update `suggestions.json` tier enum accordingly:
+   `open_opp | stage_purchase | stage_decision | intent_6sense | consideration_som |
+   recent_activity | alphabetical` — reasons must carry the number ("6sense intent 78,
+   stage Decision"). `TodaysPicks.jsx` renders whatever reason string arrives; update its
+   tier badge map.
+5. **Standing rule (add to CLAUDE.md data-integrity rules):** 6sense intent/stage is a
+   PRIORITIZATION signal only — never referenced or implied in outreach copy ("noticed
+   you've been researching…" is prohibited). It ranks who to work; public signals (news,
+   hiring, G2 profile, ai_visibility) supply what to say. Messaging generation must not
+   consume the 6sense fields.
+6. **CLAUDE.md "Session facts" update (same commit):** universe is 289 (down from 452),
+   new WHERE clause, FY27 AE pairing Sean Mahoney + Nick Cantieri, ~163 legacy accounts
+   auto-archive on the next light run. Without this, future headless runs flag phantom
+   ±20% count anomalies against stale facts.
+7. **Verify:** run a light refresh → index reconciles to 289 active, ~163 newly archived
+   (never deleted), the ±20% warning fires once with a note pointing at this change,
+   `suggestions.json` shows the new tiers, and the top of the list is dominated by the
+   Purchase/Decision accounts (17 as of 2026-07-21).
+
+Book snapshot for sanity-checking (from the 2026-07-21 report): 289 accounts; buying
+stages — Purchase 4, Decision 13, Consideration 43, Awareness 76, Target 152; 136 with
+nonzero intent score; 10 with open opps (Shift4, Cresta, Revenera, Elemica, Socure,
+GlossGenius, You, Measured, Omeda, Zonar Systems).
 
 ## 7G-1 — AI-visibility module (the AEO play, automated)
 
