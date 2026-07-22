@@ -228,6 +228,37 @@
         }
       }
     },
+    "ai_visibility": {
+      "type": "object",
+      "description": "7G-1: does this company show up when a buyer asks an LLM for a shortlist in their category, and who gets cited? Written by the server-side runner (server/lib/aiVisibility.js), not the pipeline. company_appeared is data, not copy — if the company DOES appear, the angle flips to 'who controls whether that continues'; never misrepresent the result.",
+      "required": ["queries", "as_of"],
+      "additionalProperties": false,
+      "properties": {
+        "queries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["prompt", "ran_at", "model", "company_appeared"],
+            "additionalProperties": false,
+            "properties": {
+              "prompt": { "type": "string" },
+              "ran_at": { "type": "string", "format": "date-time" },
+              "model": { "type": "string" },
+              "company_appeared": { "type": "boolean" },
+              "companies_returned": { "type": "array", "items": { "type": "string" } },
+              "g2_cited": { "type": "boolean" },
+              "sources_cited": { "type": "array", "items": { "type": "string" } },
+              "raw_excerpt": { "type": "string" }
+            }
+          }
+        },
+        "summary": {
+          "type": ["string", "null"],
+          "description": "One line, the wedge — e.g. 'absent from all 3 shortlist queries; Competitor X appears in 3/3; G2 cited in 2/3'."
+        },
+        "as_of": { "type": "string", "format": "date-time" }
+      }
+    },
     "messaging": {
       "type": "object",
       "additionalProperties": false,

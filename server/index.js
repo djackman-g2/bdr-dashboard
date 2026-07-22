@@ -17,6 +17,7 @@ import {
   jobEvents,
 } from './lib/queue.js'
 import { handleChat } from './lib/chat.js'
+import { runAiVisibility } from './lib/aiVisibility.js'
 
 fs.mkdirSync(paths.logsDir, { recursive: true })
 
@@ -119,6 +120,31 @@ app.post('/api/refresh', async (req, res) => {
 // Phase 6 — chat grounded on one account's research JSON. Direct Anthropic
 // API call (key from macOS Keychain), no MCPs; streams NDJSON back.
 app.post('/api/chat', handleChat)
+
+// 7G-1 — AI-visibility section update. Server-side completions (same client
+// as chat), ajv-validated atomic write; refreshed_at untouched. Also runs
+// automatically after every successful deep refresh (see queue.js).
+app.post('/api/ai-visibility/:slug', async (req, res) => {
+  const { slug } = req.params
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    return res.status(400).json({ error: 'slug must be an account slug' })
+  }
+  try {
+    const section = await runAiVisibility(slug)
+    res.json({ slug, ai_visibility: section })
+  } catch (err) {
+    if (err.code === 'not-found') return res.status(404).json({ error: err.message })
+    if (err.code === 'no-key') {
+      return res.status(503).json({
+        error:
+          'Anthropic API key not set. Add it to the macOS Keychain (it is never stored in a file): ' +
+          'security add-generic-password -a "$USER" -s bdr-dashboard-anthropic -w',
+      })
+    }
+    if (err.code === 'auth') return res.status(503).json({ error: err.message })
+    res.status(502).json({ error: err.message ?? 'ai_visibility run failed' })
+  }
+})
 
 // ---------- Static ----------
 // Data JSON — same URL shape the Vite dev shim mirrors. Never cached.

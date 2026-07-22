@@ -10,6 +10,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { config, paths } from './config.js'
 import { readMeta, updateMeta } from './meta.js'
+import { runAiVisibility } from './aiVisibility.js'
 
 export const jobEvents = new EventEmitter()
 
@@ -210,6 +211,20 @@ async function finishJob(job, result) {
     }
   })
 
+  // 7G-1: every successful deep refresh gets a fresh ai_visibility section —
+  // cheap (2-3 small completions via the chat proxy), runs in the job's queue
+  // slot before the next job starts. Failure is loud in the run entry but
+  // never fails the deep run itself.
+  if (result.ok && job.mode === 'deep' && config.ai_visibility?.run_after_deep !== false) {
+    const note = await autoAiVisibility(job)
+    if (note) {
+      await updateMeta((m) => {
+        const run = (m.runs ?? []).find((r) => r.id === job.id)
+        if (run) run.notes = [...(run.notes ?? []), note]
+      })
+    }
+  }
+
   emit(result.ok ? 'finished' : 'failed', job, {
     error: result.error ?? null,
     finished_at,
@@ -222,6 +237,30 @@ async function finishJob(job, result) {
     log_file: logFile ? path.relative(paths.root, logFile) : null,
   })
   processNext()
+}
+
+// Deep jobs are queued by domain/name/SF Id — resolve to the index slug, then
+// run the ai_visibility module for it. Returns a run-entry note (or null when
+// the account can't be resolved, e.g. a brand-new domain the pipeline slugged
+// differently).
+async function autoAiVisibility(job) {
+  try {
+    const index = JSON.parse(await fsp.readFile(paths.index, 'utf8'))
+    const q = job.query.toLowerCase()
+    const qSlug = q.replace(/\./g, '-')
+    const entry = (index.accounts ?? []).find(
+      (a) => a.domain === q || a.slug === qSlug || a.slug === q || (a.name ?? '').toLowerCase() === q
+    )
+    if (!entry) {
+      console.log(`[ai-visibility] no index entry matches "${job.query}" — skipped`)
+      return null
+    }
+    const section = await runAiVisibility(entry.slug)
+    return `ai_visibility auto-run after deep (server): ${section.queries.length} queries, summary: ${section.summary ?? 'n/a'}`
+  } catch (err) {
+    console.error(`[ai-visibility] auto-run failed for ${job.query}: ${err.message}`)
+    return `ai_visibility auto-run after deep FAILED (${err.code ?? 'error'}): ${err.message}`
+  }
 }
 
 async function buildPrompt(job) {

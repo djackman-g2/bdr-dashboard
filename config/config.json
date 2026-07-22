@@ -51,6 +51,13 @@
     "max_section_contact_enrich": 5,
     "paid_tools": ["account_research", "enrich_contacts", "contact_research", "enrich_companies"]
   },
+  "ai_visibility": {
+    "_comment": "7G-1 AEO module. Server-side runner (reuses the chat client/proxy/Keychain key) — 2-3 small completions per account, no MCPs. run_after_deep: server auto-runs it after every successful deep refresh. 6sense never feeds these prompts; queries are built from g2/firmographics categories only.",
+    "model": null,
+    "max_tokens": 1200,
+    "max_excerpt_chars": 2000,
+    "run_after_deep": true
+  },
   "chat": {
     "_comment": "Phase 6 account chat. Direct Anthropic API (or a LiteLLM proxy via base_url — must expose the Anthropic /v1/messages surface), no MCPs. Key lives ONLY in the macOS Keychain under keychain_service — add it with: security add-generic-password -U -a \"$USER\" -s bdr-dashboard-anthropic -w",
     "base_url": "https://llmproxy.g2.com",

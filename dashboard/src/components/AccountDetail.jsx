@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Badge, { ConfidenceBadge, VerifiedValueBadge, ContactVerificationBadge } from './Badge.jsx'
 import SignalsTimeline from './SignalsTimeline.jsx'
 import ChatPanel from './ChatPanel.jsx'
+import AiVisibility from './AiVisibility.jsx'
 import SfActivity from './SfActivity.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
 import { toBullets } from '../lib/prose.js'
@@ -248,6 +249,8 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
               )}
             </Section>
           )}
+
+          <AiVisibility slug={a.slug} data={a.ai_visibility} serverUp={!!onRefresh} />
 
           <Section
             title={`ICP contacts (${a.icp_contacts?.length ?? 0})`}

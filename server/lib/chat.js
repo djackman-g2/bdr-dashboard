@@ -27,7 +27,9 @@ function readKeychainKey() {
   })
 }
 
-async function getClient() {
+// Shared by the chat panel and the ai_visibility runner (7G-1) — one cached
+// client, one Keychain read. Throws 'no-key' when the Keychain entry is absent.
+export async function getClient() {
   if (!client) {
     client = new Anthropic({
       apiKey: await readKeychainKey(),
@@ -38,6 +40,13 @@ async function getClient() {
   }
   return client
 }
+
+// Drop the cached client so a rotated Keychain key is re-read next request.
+export function invalidateClient() {
+  client = null
+}
+
+export { MODEL as CHAT_MODEL, KEYCHAIN_SERVICE }
 
 const SYSTEM_INSTRUCTIONS = `You are the research copilot inside a private account-research dashboard used by Declan Jackman, a BDR on G2's Mid-Market sales team, for prospecting, outbounding, and pre-call prep. Each conversation is about exactly one target account; that account's full research dossier (JSON, assembled by an automated pipeline from Salesforce, ZoomInfo, G2, Gong, news, and LinkedIn verification) is provided below.
 
@@ -146,7 +155,7 @@ export async function handleChat(req, res) {
     // Headers already sent — report over the stream. Distinguish the cases a
     // user can act on; keychain key stays cached unless auth actually failed.
     if (err instanceof Anthropic.AuthenticationError) {
-      client = null
+      invalidateClient()
       send({ type: 'error', error: 'Anthropic API key was rejected — update the Keychain entry and retry.' })
     } else if (err instanceof Anthropic.RateLimitError) {
       send({ type: 'error', error: 'Anthropic rate limit hit — wait a moment and retry.' })
