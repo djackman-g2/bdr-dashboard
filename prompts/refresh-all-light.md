@@ -17,7 +17,9 @@ Immediately attempt `getUserInfo` on Salesforce Native MCP Reads (PROD).
 
 ## Step 1 — Pull the account universe
 
-`soqlQuery` all Accounts `WHERE <config.salesforce.account_universe_where>`, selecting `config.salesforce.account_fields`. Expect ~452 rows; if the count differs sharply (±20%) from the index, note it in the run entry. Remember `LastActivityDate` in this org can be future-dated — discard any date > today before using it.
+`soqlQuery` all Accounts `WHERE <config.salesforce.account_universe_where>`, selecting `config.salesforce.account_fields`. Expect ~289 rows (FY27 universe, corrected 2026-07-21 — the first run after the correction will see ~163 legacy accounts archive; that one-time wave is expected, note it and move on); if the count differs sharply (±20%) from the index, note it in the run entry. Remember `LastActivityDate` in this org can be future-dated — discard any date > today before using it.
+
+The pull now includes 6sense + hierarchy fields (`X6sense_*`, `*_SOM__c`, etc.). Copy them into each account JSON's `salesforce` section (snake_case names per the schema: `buying_stage_6sense`, `intent_score_6sense`, `is_6qa`, `total_hierarchy_acv`, `total_hierarchy_som`, `available_som`, `active_products_in_hierarchy`, `claimed_profiles`, `profile_completeness_pct`, `reviews_last_60_days`) when updating existing files. **6sense stage/score is a PRIORITIZATION signal only — it must never be referenced or implied in outreach copy or messaging generation.**
 
 ## Step 2 — Diff against `data/index.json`
 
@@ -31,18 +33,22 @@ Resolve each SF Account's canonical domain from `Website` (strip scheme/www, low
 
 Candidates: every index entry with `status: "pending_research"` — NOT just accounts new this run. (Cap-deferred accounts from earlier runs stay `pending_research` until a deep run completes; this step is their retry mechanism.)
 
-Rank candidates. All ranking signals must be free calls:
+Rank candidates. All ranking signals must be free — tiers 2–4 use the 6sense fields already in the Step 1 universe pull (zero extra calls); tier 1 is one extra SOQL. Do NOT use G2 `browse_buyer_intent` for ranking (removed 2026-07-21: confirmed tenant-scoped, returns the same companies for every product — see the CLAUDE.md connector table):
 
-1. **Open opportunity** — one `soqlQuery`: open Opportunities (`IsClosed = false`) across the universe, grouped by AccountId. Any candidate with an open opp ranks first (largest amount first within the tier).
-2. **G2 buyer intent** — one `browse_buyer_intent` call for G2's products; match returned companies against candidate domains/names. The tool is flaky: attempt it, and on failure just skip this tier and note the failed attempt in the run entry.
-3. **Recent real CRM activity** — `LastActivityDate` within the last 90 days AND `<= today` (this org has future-dated values — discard any date > today, per config notes).
-4. **Everything else** — alphabetical by domain.
+1. **Open opportunity** (`open_opp`) — one `soqlQuery`: open Opportunities (`IsClosed = false`) across the universe, grouped by AccountId. Any candidate with an open opp ranks first (largest amount first within the tier).
+2. **6sense Buying Stage Purchase, then Decision** (`stage_purchase` / `stage_decision`) — `X6sense_Account_Buying_Stage__c = 'Purchase'` first, then `'Decision'`; within each stage, intent score descending.
+3. **6sense intent score** (`intent_6sense`) — remaining candidates with a nonzero `X6sense_Account_Intent_Score__c`, descending; 6QA-flagged accounts (`X6sense_6QA__c = true`) first within equal scores.
+4. **Consideration stage** (`consideration_som`) — `Buying Stage = 'Consideration'`, ordered by `Available_SOM__c` descending.
+5. **Recent real CRM activity** (`recent_activity`) — `LastActivityDate` within the last 90 days AND `<= today` (this org has future-dated values — discard any date > today, per config notes).
+6. **Everything else** (`alphabetical`) — alphabetical by domain.
+
+Reasons must carry the number that ranked the account, e.g. `"6sense intent 78, stage Decision"`, `"Consideration, available SOM $250k"`. 6sense values rank who to work — they NEVER appear in outreach copy (data-integrity rule).
 
 Then check `config.refresh.auto_queue_deep`:
 
 - **`false` (current default — the user hand-picks their daily accounts):** queue NOTHING. Instead:
   1. Write `data/suggestions.json` (the dashboard renders it as the "Today's picks" panel):
-     `{"generated_at": "<ISO>", "pending_total": <n>, "suggestions": [{"slug": "...", "domain": "...", "name": "...", "tier": "open_opp"|"g2_intent"|"recent_activity"|"alphabetical", "reason": "<one line, e.g. 'open opp $18k (Madwire - FVC, closes 2026-08-20)'>"}]}` — top 10, rank order.
+     `{"generated_at": "<ISO>", "pending_total": <n>, "suggestions": [{"slug": "...", "domain": "...", "name": "...", "tier": "open_opp"|"stage_purchase"|"stage_decision"|"intent_6sense"|"consideration_som"|"recent_activity"|"alphabetical", "reason": "<one line carrying the ranking number, e.g. 'open opp $18k (Madwire - FVC, closes 2026-08-20)' or '6sense intent 78, stage Decision'>"}]}` — top 10, rank order.
   2. Also add a short `notes` line to the run entry: `"deep suggestions written to data/suggestions.json (top: <first 3 domains>); <n> still pending"`.
 - **`true`:** POST sequentially in rank order (queue and caps live in the server — do not research inline):
 

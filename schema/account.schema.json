@@ -61,6 +61,25 @@
         "billing_state": { "type": ["string", "null"] },
         "billing_country": { "type": ["string", "null"] },
         "bdr_notes": { "type": ["string", "null"] },
+        "buying_stage_6sense": {
+          "type": ["string", "null"],
+          "description": "X6sense_Account_Buying_Stage__c (Purchase/Decision/Consideration/Awareness/Target). PRIORITIZATION ONLY — never referenced or implied in outreach copy."
+        },
+        "intent_score_6sense": {
+          "type": ["number", "null"],
+          "description": "X6sense_Account_Intent_Score__c. Prioritization only, never in outreach copy."
+        },
+        "is_6qa": { "type": ["boolean", "null"], "description": "X6sense_6QA__c" },
+        "total_hierarchy_acv": { "type": ["number", "null"], "description": "Total_Hierarchy_ACV__c" },
+        "total_hierarchy_som": { "type": ["number", "null"], "description": "Total_Hierarchy_SOM__c" },
+        "available_som": { "type": ["number", "null"], "description": "Available_SOM__c" },
+        "active_products_in_hierarchy": { "type": ["integer", "null"], "description": "Number_Active_Products_In_Hierarchy__c" },
+        "claimed_profiles": { "type": ["integer", "null"], "description": "Number_of_Claimed_Profiles__c" },
+        "profile_completeness_pct": {
+          "type": ["number", "null"],
+          "description": "Profile_Completeness_Percent__c — sparsely populated in the org (often null even on high-intent accounts)."
+        },
+        "reviews_last_60_days": { "type": ["integer", "null"], "description": "Total_Vendor_Reviews_Last_60_Days__c" },
         "open_opportunities": {
           "type": "array",
           "items": {

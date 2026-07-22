@@ -2,8 +2,13 @@ import { relativeTime } from '../lib/format.js'
 
 const TIER_LABEL = {
   open_opp: { text: 'open opp', cls: 'border-success-300 bg-success-100 text-success-700 dark:border-success-700 dark:bg-success-900/60 dark:text-success-300' },
-  g2_intent: { text: 'G2 intent', cls: 'border-primary-300 bg-primary-100 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300' },
+  stage_purchase: { text: 'purchase stage', cls: 'border-brand-300 bg-brand-100 text-brand-700 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
+  stage_decision: { text: 'decision stage', cls: 'border-brand-300 bg-brand-100 text-brand-700 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
+  intent_6sense: { text: '6sense intent', cls: 'border-primary-300 bg-primary-100 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300' },
+  consideration_som: { text: 'consideration', cls: 'border-warning-300 bg-warning-100 text-warning-700 dark:border-warning-700 dark:bg-warning-950/60 dark:text-warning-300' },
   recent_activity: { text: 'recent CRM', cls: 'border-info-300 bg-info-100 text-info-700 dark:border-info-700 dark:bg-info-950/60 dark:text-info-300' },
+  // legacy tier value from pre-FY27 suggestions.json files
+  g2_intent: { text: 'G2 intent', cls: 'border-primary-300 bg-primary-100 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300' },
   alphabetical: { text: 'backlog', cls: 'border-zinc-300 bg-zinc-100 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400' },
 }
 

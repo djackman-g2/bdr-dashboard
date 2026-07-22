@@ -144,8 +144,8 @@ copy = persona skeleton × account payload × contact facts.
 
 ## 7G-3 — Messaging-lite tier (coverage for the long tail)
 
-Problem: messaging is deep-only; deep is 15-26 min, capped 10/day, serial → 452 accounts
-never get covered. The long tail needs sendable account-level persona emails WITHOUT
+Problem: messaging is deep-only; deep is 15-26 min, capped 10/day, serial → 289 accounts
+(post-7G-0 universe) never get covered. The long tail needs sendable account-level persona emails WITHOUT
 credits, verification, or Playwright.
 
 1. **New mode `messaging-lite`** (per-account, prompt `prompts/refresh-messaging-lite.md`):
@@ -168,7 +168,8 @@ credits, verification, or Playwright.
 3. **Batching:** `POST /api/refresh` accepts mode `messaging-lite`; nightly ranking gains a
    config flag `refresh.auto_queue_lite` (default false initially; intended true once
    verified) with its own daily cap `lite_daily_cap` (suggest 25 — token cost only). At 25/day
-   the whole book has sendable persona messaging in ~3 weeks, refreshing oldest-first after.
+   the whole 289-account book has sendable persona messaging in ~12 days, refreshing
+   oldest-first after.
 4. Verify: lite-run 5 accounts from the alphabetical tier; confirm dossiers validate, copy
    quality is acceptable for a template-tier send, and a lite CSV imports into a test flow.
 
@@ -189,7 +190,7 @@ credits, verification, or Playwright.
 
 ## Metrics to watch (add to run notes / weekly rollup in 7C)
 
-- Coverage: accounts with sendable messaging (deep + lite) vs 452.
+- Coverage: accounts with sendable messaging (deep + lite) vs 289 (post-7G-0 universe).
 - Per-send effort: time from "pick account" to "CSV imported" (target: minutes).
 - Reply rate by persona and by tier (deep vs lite) — Groove reports; if lite replies ≈ deep
   replies, deep messaging effort should shrink further. Opens without replies on AEO sends →

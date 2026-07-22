@@ -1,7 +1,7 @@
 {
   "salesforce": {
     "bdr_user_id": "005Nw000003GH6PIAW",
-    "account_universe_where": "BDR__c = '005Nw000003GH6PIAW'",
+    "account_universe_where": "BDR__c = '005Nw000003GH6PIAW' AND Owner.Name IN ('Sean Mahoney','Nick Cantieri') AND Type = 'Vendor - Prospect' AND Is_Ultimate_Parent_Account__c = true",
     "account_fields": [
       "Id",
       "Name",
@@ -11,9 +11,19 @@
       "BillingCity",
       "BillingState",
       "BillingCountry",
-      "BDR_Notes__c"
+      "BDR_Notes__c",
+      "X6sense_Account_Buying_Stage__c",
+      "X6sense_Account_Intent_Score__c",
+      "X6sense_6QA__c",
+      "Total_Hierarchy_ACV__c",
+      "Total_Hierarchy_SOM__c",
+      "Available_SOM__c",
+      "Number_Active_Products_In_Hierarchy__c",
+      "Number_of_Claimed_Profiles__c",
+      "Profile_Completeness_Percent__c",
+      "Total_Vendor_Reviews_Last_60_Days__c"
     ],
-    "notes": "Universe is the custom BDR__c lookup, NOT OwnerId (returns 0). LastActivityDate contains future dates (2029-2036) — filter out any date > today before using for recency."
+    "notes": "FY27 universe (verified 289 accounts, 2026-07-21): BDR__c lookup, NOT OwnerId (returns 0) — plus AE-owner, prospect-type, and ultimate-parent filters. Non-ultimate-parent children and other-AE accounts (~163 pending reassignment) are excluded BY DESIGN; if the book shifts again, this WHERE clause is the single thing to edit. LastActivityDate contains future dates (2029-2036) — filter out any date > today before using for recency. 6sense/hierarchy fields feed nightly ranking only; 6sense values must NEVER appear in outreach copy."
   },
   "refresh": {
     "nightly_light_cron": "30 5 * * *",
