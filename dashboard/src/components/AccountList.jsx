@@ -8,8 +8,10 @@ const CONFIDENCE_DOT = {
   low: 'bg-brand-400',
 }
 
+// "All" = the working book. Archived accounts (left the BDR universe — e.g.
+// the FY27 reassignment wave) are kept forever but only shown on their own tab.
 const STATUS_FILTERS = [
-  { key: 'all', label: 'All', match: () => true },
+  { key: 'all', label: 'All', match: (a) => a.status !== 'archived' },
   { key: 'researched', label: 'Researched', match: (a) => a.status === 'active' },
   { key: 'pending', label: 'Pending', match: (a) => a.status === 'pending_research' },
   { key: 'archived', label: 'Archived', match: (a) => a.status === 'archived' },
@@ -25,9 +27,13 @@ export default function AccountList({ index, query, selected, onOpen }) {
     [accounts]
   )
 
+  const statusMatch = STATUS_FILTERS.find((s) => s.key === statusKey)?.match ?? (() => true)
+  // Denominator for the count line: the current tab's population, so search/
+  // industry narrowing reads as "x of <tab total>", never inflated by archived.
+  const baseTotal = useMemo(() => accounts.filter(statusMatch).length, [accounts, statusKey])
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const statusMatch = STATUS_FILTERS.find((s) => s.key === statusKey)?.match ?? (() => true)
     return accounts.filter(
       (a) =>
         statusMatch(a) &&
@@ -74,7 +80,7 @@ export default function AccountList({ index, query, selected, onOpen }) {
         </select>
       </div>
       <p className="px-3 pt-2 pb-1 text-[11px] text-zinc-500">
-        {filtered.length} of {accounts.length} account{accounts.length === 1 ? '' : 's'}
+        {filtered.length} of {baseTotal} account{baseTotal === 1 ? '' : 's'}
       </p>
       <ul>
         {filtered.map((a) => {
