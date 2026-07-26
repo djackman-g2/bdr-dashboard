@@ -5,6 +5,7 @@ import TodaysPicks from './components/TodaysPicks.jsx'
 import PendingAccount from './components/PendingAccount.jsx'
 import ActivityBar from './components/ActivityBar.jsx'
 import ActivityPage from './components/ActivityPage.jsx'
+import AccountsPage from './components/AccountsPage.jsx'
 import { fetchIndex, fetchAccount, fetchActivity, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { fetchTracker, logActivity, undoActivity } from './lib/tracker.js'
 import { formatDateTime, relativeTime } from './lib/format.js'
@@ -17,7 +18,7 @@ function useHashRoute() {
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
   const slug = hash.startsWith('#/account/') ? hash.slice('#/account/'.length) : null
-  const view = hash === '#/activity' ? 'activity' : slug ? 'account' : 'home'
+  const view = hash === '#/activity' ? 'activity' : hash === '#/accounts' ? 'accounts' : slug ? 'account' : 'home'
   return [slug, view, (s) => (window.location.hash = s ? `#/account/${s}` : '')]
 }
 
@@ -184,20 +185,19 @@ export default function App() {
   }, [serverUp, loadTracker])
 
   // Mutations respond with the full refreshed summary — no follow-up GET.
-  const trackerLog = useCallback((type, outcome) => {
+  // Every tracker write funnels through here: state + error notice + busy flag.
+  const trackerMutate = useCallback((promise) => {
     setTrackerBusy(true)
-    logActivity({ type, ...(outcome ? { outcome } : {}) })
+    return promise
       .then(setTracker)
-      .catch((e) => setNotice({ tone: 'error', text: `Log failed: ${e.message}` }))
+      .catch((e) => setNotice({ tone: 'error', text: `Tracker: ${e.message}` }))
       .finally(() => setTrackerBusy(false))
   }, [])
-  const trackerUndo = useCallback((id) => {
-    setTrackerBusy(true)
-    undoActivity(id)
-      .then(setTracker)
-      .catch((e) => setNotice({ tone: 'error', text: `Undo failed: ${e.message}` }))
-      .finally(() => setTrackerBusy(false))
-  }, [])
+  const trackerLog = useCallback(
+    (type, outcome) => trackerMutate(logActivity({ type, ...(outcome ? { outcome } : {}) })),
+    [trackerMutate]
+  )
+  const trackerUndo = useCallback((id) => trackerMutate(undoActivity(id)), [trackerMutate])
 
   // Live updates from the local server: data file changes + job lifecycle.
   useEffect(() => {
@@ -290,16 +290,22 @@ export default function App() {
           </span>
           BDR Account Research
         </button>
-        <button
-          onClick={() => (window.location.hash = '#/activity')}
-          className={`rounded-md border px-2 py-1 text-xs backdrop-blur ${
-            view === 'activity'
-              ? 'border-primary-400 bg-primary-100/80 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300'
-              : 'border-zinc-300 bg-white/80 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800'
-          }`}
-        >
-          Activity
-        </button>
+        {[
+          ['activity', 'Activity'],
+          ['accounts', 'Accounts'],
+        ].map(([v, label]) => (
+          <button
+            key={v}
+            onClick={() => (window.location.hash = `#/${v}`)}
+            className={`rounded-md border px-2 py-1 text-xs backdrop-blur ${
+              view === v
+                ? 'border-primary-400 bg-primary-100/80 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300'
+                : 'border-zinc-300 bg-white/80 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
         {status?.running && (
           <span className="animate-pulse rounded-full border border-primary-300 bg-primary-100 px-2 py-0.5 text-xs text-primary-700 motion-reduce:animate-none dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300">
             ⟳ {status.running.query} ({status.running.mode})
@@ -392,6 +398,15 @@ export default function App() {
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">
                 Activity tracking needs the local server — it's offline (read-only mode).
+              </p>
+            ))}
+
+          {view === 'accounts' &&
+            (serverUp ? (
+              <AccountsPage tracker={tracker} index={index} busy={trackerBusy} mutate={trackerMutate} navigate={navigate} />
+            ) : (
+              <p className="mt-10 text-center text-sm text-zinc-500">
+                The account tracker needs the local server — it's offline (read-only mode).
               </p>
             ))}
 

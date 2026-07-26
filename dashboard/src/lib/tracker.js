@@ -24,6 +24,43 @@ export function undoActivity(id) {
   return api(`/api/tracker/activity/${id}`, { method: 'DELETE' })
 }
 
+// ---- Module 2: accounts & contacts working layer ----
+
+const json = (method, body) => ({
+  method,
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(body),
+})
+
+export const addTrackerAccount = (account) => api('/api/tracker/accounts', json('POST', account))
+export const patchTrackerAccount = (id, patch) => api(`/api/tracker/accounts/${id}`, json('PATCH', patch))
+export const deleteTrackerAccount = (id) => api(`/api/tracker/accounts/${id}`, { method: 'DELETE' })
+export const addTrackerContact = (contact) => api('/api/tracker/contacts', json('POST', contact))
+export const patchTrackerContact = (id, patch) => api(`/api/tracker/contacts/${id}`, json('PATCH', patch))
+export const deleteTrackerContact = (id) => api(`/api/tracker/contacts/${id}`, { method: 'DELETE' })
+
+// Client-side persona guess (import buttons) — mirrors the server's matcher:
+// specific personas before `marketing` (its titles include "Product
+// Marketing"), short tokens whole-word only ("GM" must not match "segment").
+const PERSONA_MATCH_ORDER = ['demandGenSpecific', 'productMarketing', 'customerSuccess', 'productManagement', 'sales', 'executive', 'marketing']
+
+export function personaForTitle(title, personas) {
+  if (!title || !personas) return null
+  // "Vice President, Revenue Marketing" must not hit executive's "President".
+  const t = title.toLowerCase().replace(/vice president/g, 'vp')
+  const keys = [...PERSONA_MATCH_ORDER.filter((k) => personas[k]), ...Object.keys(personas).filter((k) => !PERSONA_MATCH_ORDER.includes(k))]
+  for (const key of keys) {
+    for (const raw of personas[key].titles) {
+      const needle = raw.toLowerCase()
+      if (needle.length <= 3 ? new RegExp(`\\b${needle}\\b`).test(t) : t.includes(needle)) return key
+    }
+  }
+  return null
+}
+
+// "demandGenSpecific" → "demand gen specific" for selects and chips.
+export const personaLabel = (key) => (key ? key.replace(/([A-Z])/g, ' $1').toLowerCase() : '—')
+
 export const TYPE_LABELS = {
   call: 'Calls',
   email: 'Emails',
