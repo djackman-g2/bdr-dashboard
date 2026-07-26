@@ -6,6 +6,7 @@ import PendingAccount from './components/PendingAccount.jsx'
 import ActivityBar from './components/ActivityBar.jsx'
 import ActivityPage from './components/ActivityPage.jsx'
 import AccountsPage from './components/AccountsPage.jsx'
+import DayPage from './components/DayPage.jsx'
 import { fetchIndex, fetchAccount, fetchActivity, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { fetchTracker, logActivity, undoActivity } from './lib/tracker.js'
 import { formatDateTime, relativeTime } from './lib/format.js'
@@ -18,7 +19,8 @@ function useHashRoute() {
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
   const slug = hash.startsWith('#/account/') ? hash.slice('#/account/'.length) : null
-  const view = hash === '#/activity' ? 'activity' : hash === '#/accounts' ? 'accounts' : slug ? 'account' : 'home'
+  const view =
+    hash === '#/activity' ? 'activity' : hash === '#/accounts' ? 'accounts' : hash === '#/day' ? 'day' : slug ? 'account' : 'home'
   return [slug, view, (s) => (window.location.hash = s ? `#/account/${s}` : '')]
 }
 
@@ -194,10 +196,18 @@ export default function App() {
       .finally(() => setTrackerBusy(false))
   }, [])
   const trackerLog = useCallback(
-    (type, outcome) => trackerMutate(logActivity({ type, ...(outcome ? { outcome } : {}) })),
+    (type, outcome, contactId) =>
+      trackerMutate(logActivity({ type, ...(outcome ? { outcome } : {}), ...(contactId ? { contactId } : {}) })),
     [trackerMutate]
   )
   const trackerUndo = useCallback((id) => trackerMutate(undoActivity(id)), [trackerMutate])
+
+  // The activity bar's target: long-press a bar button to log against this
+  // contact (sets lastTouch, advances step when it has a hook). Selected from
+  // the Accounts table (◎) or a Day-view chip; toggles off on reselect.
+  const [targetId, setTargetId] = useState(null)
+  const onTarget = useCallback((id) => setTargetId((cur) => (cur === id ? null : id)), [])
+  const targetContact = (tracker?.contacts ?? []).find((c) => c.id === targetId) ?? null
 
   // Live updates from the local server: data file changes + job lifecycle.
   useEffect(() => {
@@ -291,6 +301,7 @@ export default function App() {
           BDR Account Research
         </button>
         {[
+          ['day', 'Day'],
           ['activity', 'Activity'],
           ['accounts', 'Accounts'],
         ].map(([v, label]) => (
@@ -403,10 +414,27 @@ export default function App() {
 
           {view === 'accounts' &&
             (serverUp ? (
-              <AccountsPage tracker={tracker} index={index} busy={trackerBusy} mutate={trackerMutate} navigate={navigate} />
+              <AccountsPage
+                tracker={tracker}
+                index={index}
+                busy={trackerBusy}
+                mutate={trackerMutate}
+                navigate={navigate}
+                targetId={targetId}
+                onTarget={onTarget}
+              />
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">
                 The account tracker needs the local server — it's offline (read-only mode).
+              </p>
+            ))}
+
+          {view === 'day' &&
+            (serverUp ? (
+              <DayPage tracker={tracker} targetId={targetId} onTarget={onTarget} />
+            ) : (
+              <p className="mt-10 text-center text-sm text-zinc-500">
+                The daily view needs the local server — it's offline (read-only mode).
               </p>
             ))}
 
@@ -434,7 +462,14 @@ export default function App() {
 
       {/* ---- One-tap activity logging, visible on every view ---- */}
       {serverUp && tracker && (
-        <ActivityBar tracker={tracker} onLog={trackerLog} onUndo={trackerUndo} busy={trackerBusy} />
+        <ActivityBar
+          tracker={tracker}
+          targetContact={targetContact}
+          onClearTarget={() => setTargetId(null)}
+          onLog={trackerLog}
+          onUndo={trackerUndo}
+          busy={trackerBusy}
+        />
       )}
     </div>
   )

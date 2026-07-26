@@ -27,7 +27,7 @@ const selectCls =
 // One inline-editable contact row. Text fields save on blur; selects on
 // change. Rows without a hook render red and the step "+" is blocked —
 // no hook, no advance (the server enforces it too).
-function ContactRow({ c, personas, statuses, busy, onPatch, onDelete }) {
+function ContactRow({ c, personas, statuses, busy, onPatch, onDelete, targeted, onTarget }) {
   const [draft, setDraft] = useState({
     name: c.name ?? '',
     title: c.title ?? '',
@@ -52,6 +52,17 @@ function ContactRow({ c, personas, statuses, busy, onPatch, onDelete }) {
           : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
       }`}
     >
+      <td className="py-1 pr-1">
+        <button
+          onClick={() => onTarget(c.id)}
+          disabled={busy}
+          title={targeted ? 'Activity target — long-press a bar button to log to this contact' : 'Set as activity target'}
+          aria-label={targeted ? 'Clear activity target' : 'Set as activity target'}
+          className={targeted ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-300 hover:text-primary-500 dark:text-zinc-600'}
+        >
+          {targeted ? '◉' : '◎'}
+        </button>
+      </td>
       <td className="min-w-32 py-1 pr-2">
         <input
           value={draft.name}
@@ -177,7 +188,7 @@ function ContactRow({ c, personas, statuses, busy, onPatch, onDelete }) {
   )
 }
 
-function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate }) {
+function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate, targetId, onTarget }) {
   const [newFlag, setNewFlag] = useState('')
   const [importing, setImporting] = useState(false)
   const singleThreaded = account.playType && account.threadIds.length < 2
@@ -306,6 +317,7 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
           <table className="w-full min-w-[56rem] text-sm">
             <thead>
               <tr className="text-left text-xs text-zinc-500">
+                <th className="py-1 pr-1 font-normal" aria-label="Target"></th>
                 <th className="py-1 pr-2 font-normal">Contact</th>
                 <th className="py-1 pr-2 font-normal">Title</th>
                 <th className="py-1 pr-2 font-normal">Persona</th>
@@ -328,6 +340,8 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
                   busy={busy}
                   onPatch={(id, patch) => mutate(patchTrackerContact(id, patch))}
                   onDelete={(id) => mutate(deleteTrackerContact(id))}
+                  targeted={c.id === targetId}
+                  onTarget={onTarget}
                 />
               ))}
             </tbody>
@@ -345,7 +359,7 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
 // #/accounts — the working layer over the book. Thin by design: Salesforce
 // stays system-of-record, the research dossiers stay the intel source; this
 // is just who's being worked, at what step, with what hook.
-export default function AccountsPage({ tracker, index, busy, mutate, navigate }) {
+export default function AccountsPage({ tracker, index, busy, mutate, navigate, targetId, onTarget }) {
   const [query, setQuery] = useState('')
 
   const candidates = useMemo(() => {
@@ -417,6 +431,8 @@ export default function AccountsPage({ tracker, index, busy, mutate, navigate })
             busy={busy}
             mutate={mutate}
             navigate={navigate}
+            targetId={targetId}
+            onTarget={onTarget}
           />
         ))}
       </div>
