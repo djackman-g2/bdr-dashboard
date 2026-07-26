@@ -3,7 +3,10 @@ import AccountList from './components/AccountList.jsx'
 import AccountDetail from './components/AccountDetail.jsx'
 import TodaysPicks from './components/TodaysPicks.jsx'
 import PendingAccount from './components/PendingAccount.jsx'
+import ActivityBar from './components/ActivityBar.jsx'
+import ActivityPage from './components/ActivityPage.jsx'
 import { fetchIndex, fetchAccount, fetchActivity, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
+import { fetchTracker, logActivity, undoActivity } from './lib/tracker.js'
 import { formatDateTime, relativeTime } from './lib/format.js'
 
 function useHashRoute() {
@@ -14,7 +17,8 @@ function useHashRoute() {
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
   const slug = hash.startsWith('#/account/') ? hash.slice('#/account/'.length) : null
-  return [slug, (s) => (window.location.hash = s ? `#/account/${s}` : '')]
+  const view = hash === '#/activity' ? 'activity' : slug ? 'account' : 'home'
+  return [slug, view, (s) => (window.location.hash = s ? `#/account/${s}` : '')]
 }
 
 function useTheme() {
@@ -136,7 +140,7 @@ function Home({ suggestions, index, status, navigate, refresh, jobFor }) {
 }
 
 export default function App() {
-  const [slug, navigate] = useHashRoute()
+  const [slug, view, navigate] = useHashRoute()
   const [dark, setDark] = useTheme()
   const [index, setIndex] = useState(null)
   const [account, setAccount] = useState(null)
@@ -168,6 +172,33 @@ export default function App() {
     fetchStatus().then(setStatus).catch(() => setStatus(null))
   }, [])
 
+  // ---- Outreach tracker (activity logging — server API, data/tracker.json) ----
+  const [tracker, setTracker] = useState(null)
+  const [trackerBusy, setTrackerBusy] = useState(false)
+  const loadTracker = useCallback(() => {
+    fetchTracker().then(setTracker).catch(() => setTracker(null))
+  }, [])
+  const serverUp = Boolean(status)
+  useEffect(() => {
+    if (serverUp) loadTracker()
+  }, [serverUp, loadTracker])
+
+  // Mutations respond with the full refreshed summary — no follow-up GET.
+  const trackerLog = useCallback((type, outcome) => {
+    setTrackerBusy(true)
+    logActivity({ type, ...(outcome ? { outcome } : {}) })
+      .then(setTracker)
+      .catch((e) => setNotice({ tone: 'error', text: `Log failed: ${e.message}` }))
+      .finally(() => setTrackerBusy(false))
+  }, [])
+  const trackerUndo = useCallback((id) => {
+    setTrackerBusy(true)
+    undoActivity(id)
+      .then(setTracker)
+      .catch((e) => setNotice({ tone: 'error', text: `Undo failed: ${e.message}` }))
+      .finally(() => setTrackerBusy(false))
+  }, [])
+
   // Live updates from the local server: data file changes + job lifecycle.
   useEffect(() => {
     loadStatus()
@@ -175,6 +206,7 @@ export default function App() {
       onData: (e) => {
         if (e.path.endsWith('index.json')) loadIndex()
         if (e.path.endsWith('suggestions.json')) loadSuggestions()
+        if (e.path.endsWith('tracker.json')) loadTracker() // keeps other tabs in sync
         const current = slugRef.current
         if (current && e.path.endsWith(`activity/${current}.json`)) {
           fetchActivity(current).then(setActivity)
@@ -196,7 +228,7 @@ export default function App() {
         if (e.type === 'finished') setNotice({ tone: 'ok', text: `Refresh finished: ${e.job.query}` })
       },
     })
-  }, [loadIndex, loadStatus, loadSuggestions])
+  }, [loadIndex, loadStatus, loadSuggestions, loadTracker])
 
   const refresh = useCallback((q, mode, opts) => {
     setNotice(null)
@@ -239,11 +271,11 @@ export default function App() {
         e.preventDefault()
         searchRef.current?.focus()
       }
-      if (e.key === 'Escape' && slug) navigate(null)
+      if (e.key === 'Escape' && (slug || view !== 'home')) navigate(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [slug, navigate])
+  }, [slug, view, navigate])
 
   return (
     <div className="flex h-screen flex-col">
@@ -257,6 +289,16 @@ export default function App() {
             G2
           </span>
           BDR Account Research
+        </button>
+        <button
+          onClick={() => (window.location.hash = '#/activity')}
+          className={`rounded-md border px-2 py-1 text-xs backdrop-blur ${
+            view === 'activity'
+              ? 'border-primary-400 bg-primary-100/80 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300'
+              : 'border-zinc-300 bg-white/80 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-400 dark:hover:bg-zinc-800'
+          }`}
+        >
+          Activity
         </button>
         {status?.running && (
           <span className="animate-pulse rounded-full border border-primary-300 bg-primary-100 px-2 py-0.5 text-xs text-primary-700 motion-reduce:animate-none dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300">
@@ -283,7 +325,7 @@ export default function App() {
       <div className="flex min-h-0 flex-1">
         {/* Account rail. On narrow screens it swaps with the detail pane. */}
         <aside
-          className={`w-full shrink-0 flex-col border-zinc-200 bg-white lg:flex lg:w-80 lg:border-r xl:w-96 dark:border-zinc-800 dark:bg-zinc-900 ${slug ? 'hidden' : 'flex'}`}
+          className={`w-full shrink-0 flex-col border-zinc-200 bg-white lg:flex lg:w-80 lg:border-r xl:w-96 dark:border-zinc-800 dark:bg-zinc-900 ${view !== 'home' ? 'hidden' : 'flex'}`}
         >
           <div className="shrink-0 border-b border-zinc-200 p-3 dark:border-zinc-800">
             <input
@@ -311,7 +353,7 @@ export default function App() {
         {/* Detail pane */}
         <main
           ref={detailRef}
-          className={`min-w-0 flex-1 overflow-y-auto bg-zinc-50 p-4 lg:block lg:p-6 dark:bg-zinc-950 ${slug ? 'block' : 'hidden'}`}
+          className={`min-w-0 flex-1 overflow-y-auto bg-zinc-50 p-4 lg:block lg:p-6 dark:bg-zinc-950 ${view !== 'home' ? 'block' : 'hidden'}`}
         >
           {notice && (
             <div
@@ -333,7 +375,7 @@ export default function App() {
             </div>
           )}
 
-          {!slug && (
+          {view === 'home' && (
             <Home
               suggestions={suggestions}
               index={index}
@@ -343,6 +385,15 @@ export default function App() {
               jobFor={jobFor}
             />
           )}
+
+          {view === 'activity' &&
+            (serverUp ? (
+              <ActivityPage tracker={tracker} onUndo={trackerUndo} busy={trackerBusy} />
+            ) : (
+              <p className="mt-10 text-center text-sm text-zinc-500">
+                Activity tracking needs the local server — it's offline (read-only mode).
+              </p>
+            ))}
 
           {slug &&
             (account ? (
@@ -365,6 +416,11 @@ export default function App() {
             ))}
         </main>
       </div>
+
+      {/* ---- One-tap activity logging, visible on every view ---- */}
+      {serverUp && tracker && (
+        <ActivityBar tracker={tracker} onLog={trackerLog} onUndo={trackerUndo} busy={trackerBusy} />
+      )}
     </div>
   )
 }

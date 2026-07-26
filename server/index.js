@@ -18,6 +18,7 @@ import {
 } from './lib/queue.js'
 import { handleChat } from './lib/chat.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
+import { trackerRouter } from './lib/tracker.js'
 
 fs.mkdirSync(paths.logsDir, { recursive: true })
 
@@ -116,6 +117,10 @@ app.post('/api/refresh', async (req, res) => {
     res.status(500).json({ error: err.message })
   }
 })
+
+// Outreach tracker (activity logging + contact/account working layer).
+// Manual logging only — Groove has no API. Writes data/tracker.json.
+app.use('/api/tracker', trackerRouter)
 
 // Phase 6 — chat grounded on one account's research JSON. Direct Anthropic
 // API call (key from macOS Keychain), no MCPs; streams NDJSON back.
