@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   addTrackerAccount,
   patchTrackerAccount,
@@ -6,10 +6,142 @@ import {
   addTrackerContact,
   patchTrackerContact,
   deleteTrackerContact,
+  requestDraft,
   personaForTitle,
   personaLabel,
 } from '../lib/tracker.js'
 import { relativeTime } from '../lib/format.js'
+
+function CopyBtn({ text, label = 'copy' }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      onClick={() => {
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        })
+      }}
+      className="shrink-0 rounded border border-zinc-300 px-1.5 py-0.5 text-[10px] text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+    >
+      {copied ? '✓ copied' : label}
+    </button>
+  )
+}
+
+// Send desk: server drafts real messaging for this contact — an enrollment
+// pack (email1/2/3 + InMail + call points, pasted into the Groove flow's
+// {!flow.*} fields at enrollment) or a single thread-aware next step.
+function DraftPanel({ contact, accountName, onClose }) {
+  const [kind, setKind] = useState('pack')
+  const [state, setState] = useState({ status: 'loading' })
+
+  useEffect(() => {
+    let cancelled = false
+    setState({ status: 'loading' })
+    requestDraft(contact.id, kind)
+      .then((r) => !cancelled && setState({ status: 'done', ...r }))
+      .catch((e) => !cancelled && setState({ status: 'error', error: e.message }))
+    return () => {
+      cancelled = true
+    }
+  }, [contact.id, kind])
+
+  const d = state.draft
+  const field = (label, subject, body) => (
+    <div className="rounded border border-zinc-200 p-2 dark:border-zinc-800">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">{label}</span>
+        {subject != null && (
+          <>
+            <span className="min-w-0 flex-1 truncate text-sm font-medium">{subject}</span>
+            <CopyBtn text={subject} label="copy subject" />
+          </>
+        )}
+        <CopyBtn text={body} label="copy body" />
+      </div>
+      <p className="mt-1 text-sm whitespace-pre-wrap">{body}</p>
+    </div>
+  )
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 sm:p-8" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-full w-full max-w-2xl overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="font-semibold">
+            ✍ {contact.name ?? 'unnamed contact'} <span className="text-sm font-normal text-zinc-500">· {accountName}</span>
+          </h2>
+          <div className="ml-auto flex items-center gap-1">
+            {[
+              ['pack', 'enrollment pack'],
+              ['next', 'next step'],
+            ].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setKind(k)}
+                disabled={state.status === 'loading'}
+                className={`rounded-md border px-2 py-0.5 text-xs disabled:opacity-50 ${
+                  kind === k
+                    ? 'border-primary-400 bg-primary-100 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300'
+                    : 'border-zinc-300 text-zinc-600 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            <button onClick={onClose} aria-label="Close" className="ml-2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {state.status === 'loading' && (
+          <p className="mt-6 animate-pulse text-center text-sm text-zinc-500 motion-reduce:animate-none">
+            Drafting from dossier + plays + Groove history… (~30–60s)
+          </p>
+        )}
+        {state.status === 'error' && (
+          <p className="mt-4 rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
+            {state.error}
+          </p>
+        )}
+
+        {state.status === 'done' && !d && (
+          <div className="mt-3">
+            <p className="mb-1 text-xs text-warning-700 dark:text-warning-400">Response wasn't valid JSON — raw output:</p>
+            {field('raw', null, state.raw ?? '(empty)')}
+          </div>
+        )}
+
+        {d && (
+          <div className="mt-3 space-y-2">
+            {(d.flag_warnings ?? []).filter(Boolean).length > 0 && (
+              <p className="rounded-lg border border-brand-300 bg-brand-50 p-2 text-xs font-medium text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
+                ⚑ Before sending: {d.flag_warnings.join(' · ')}
+              </p>
+            )}
+            <p className="text-xs text-zinc-500">
+              <span className="rounded-full border border-primary-300 px-2 py-0.5 text-primary-700 dark:border-primary-700 dark:text-primary-300">
+                {d.play}
+              </span>{' '}
+              {d.rationale}
+            </p>
+            {(d.emails ?? []).map((e) => field(e.slot, e.subject, e.body))}
+            {d.linkedin_inmail && field('linkedin inmail', null, d.linkedin_inmail)}
+            {d.call_points?.length > 0 && field('call points', null, d.call_points.map((p) => `• ${p}`).join('\n'))}
+            {d.channel && field(d.channel + (d.subject ? '' : ' message'), d.subject ?? null, d.body ?? '')}
+            <p className="text-[10px] text-zinc-400">
+              Drafts are suggestions — read before sending; stats are limited to the canonical library. Regenerate by toggling pack/next.
+            </p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 const STATUS_TONE = {
   'to-find': 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
@@ -29,7 +161,7 @@ const selectCls =
 // no hook, no advance (the server enforces it too).
 // Groove-mirror data for this contact (matched by sfContactId, name fallback).
 // lastTouch and flow position come from the SF task trail — no manual entry.
-function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targeted, onTarget }) {
+function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targeted, onTarget, onDraft }) {
   const [draft, setDraft] = useState({
     name: c.name ?? '',
     title: c.title ?? '',
@@ -199,12 +331,21 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
           </button>
         )}
       </td>
-      <td className="py-1 text-right">
+      <td className="py-1 text-right whitespace-nowrap">
+        <button
+          onClick={() => onDraft(c)}
+          disabled={busy}
+          title="Draft messaging (enrollment pack / next step)"
+          aria-label="Draft messaging"
+          className="text-xs text-primary-600 hover:text-primary-700 disabled:opacity-50 dark:text-primary-400"
+        >
+          ✍ draft
+        </button>
         <button
           onClick={() => onDelete(c.id)}
           disabled={busy}
           aria-label="Delete contact"
-          className="text-xs text-zinc-400 hover:text-brand-500 disabled:opacity-50"
+          className="ml-2 text-xs text-zinc-400 hover:text-brand-500 disabled:opacity-50"
         >
           ✕
         </button>
@@ -213,13 +354,15 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
   )
 }
 
-function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate, targetId, onTarget, matchOutreach }) {
+function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate, targetId, onTarget, matchOutreach, onDraft }) {
+  const [open, setOpen] = useState(false)
   const [newFlag, setNewFlag] = useState('')
   const [importing, setImporting] = useState(false)
   const singleThreaded = account.playType && account.threadIds.length < 2
   const inIndex = (index?.accounts ?? []).find((a) => a.slug === account.id)
   const researched = inIndex?.status === 'active'
   const toFind = contacts.filter((c) => c.status === 'to-find').length
+  const hooked = contacts.filter((c) => (c.hook ?? '').trim()).length
 
   // Pull the dossier's ICP contacts in as rows (client-side — the dossier is
   // already served at /data). Dedupe by name; persona guessed from title.
@@ -248,14 +391,16 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
 
   return (
     <section className="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <header className="flex flex-wrap items-center gap-2 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-        {inIndex ? (
-          <button onClick={() => navigate(account.id)} className="font-semibold hover:text-primary-600 hover:underline dark:hover:text-primary-400">
-            {account.name}
-          </button>
-        ) : (
-          <span className="font-semibold">{account.name}</span>
-        )}
+      {/* Collapsed one-line row; expand for the contact table + account actions. */}
+      <header className="flex flex-wrap items-center gap-2 px-3 py-2">
+        <button
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          className="flex min-w-0 items-center gap-2 font-semibold hover:text-primary-600 dark:hover:text-primary-400"
+        >
+          <span className="text-xs text-zinc-400">{open ? '▾' : '▸'}</span>
+          <span className="truncate">{account.name}</span>
+        </button>
         <select
           value={account.playType ?? ''}
           onChange={(e) => mutate(patchTrackerAccount(account.id, { playType: e.target.value || null }))}
@@ -282,63 +427,82 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
             className="inline-flex items-center gap-1 rounded-full border border-brand-300 bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 dark:border-brand-800 dark:bg-brand-950/50 dark:text-brand-300"
           >
             {f}
-            <button
-              onClick={() => mutate(patchTrackerAccount(account.id, { flags: account.flags.filter((x) => x !== f) }))}
-              disabled={busy}
-              aria-label={`Remove flag ${f}`}
-              className="opacity-60 hover:opacity-100"
-            >
-              ✕
-            </button>
+            {open && (
+              <button
+                onClick={() => mutate(patchTrackerAccount(account.id, { flags: account.flags.filter((x) => x !== f) }))}
+                disabled={busy}
+                aria-label={`Remove flag ${f}`}
+                className="opacity-60 hover:opacity-100"
+              >
+                ✕
+              </button>
+            )}
           </span>
         ))}
-        <input
-          value={newFlag}
-          onChange={(e) => setNewFlag(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && newFlag.trim()) {
-              mutate(patchTrackerAccount(account.id, { flags: [...account.flags, newFlag.trim()] }))
-              setNewFlag('')
-            }
-          }}
-          placeholder="+ flag ⏎"
-          aria-label="Add flag"
-          className="w-24 rounded border border-transparent bg-transparent px-1 py-0.5 text-xs outline-none hover:border-zinc-300 focus:border-primary-500 dark:hover:border-zinc-700"
-        />
-        <span className="ml-auto flex items-center gap-2 text-xs text-zinc-500">
-          {toFind > 0 && <span>{toFind} to find</span>}
-          {researched && (
-            <button
-              onClick={importFromDossier}
-              disabled={busy || importing}
-              title="Import named ICP contacts from the research dossier"
-              className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-            >
-              {importing ? 'importing…' : '⤓ dossier contacts'}
-            </button>
-          )}
-          <button
-            onClick={() => mutate(addTrackerContact({ accountId: account.id }))}
-            disabled={busy}
-            className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
-          >
-            + contact
-          </button>
-          <button
-            onClick={() => {
-              if (window.confirm(`Remove ${account.name} and its ${contacts.length} contact row(s) from the tracker? (SF + research dossier untouched)`)) {
-                mutate(deleteTrackerAccount(account.id))
-              }
-            }}
-            disabled={busy}
-            aria-label="Remove account from tracker"
-            className="text-zinc-400 hover:text-brand-500 disabled:opacity-50"
-          >
-            ✕
-          </button>
+        <span className="ml-auto text-xs whitespace-nowrap text-zinc-500 tabular-nums">
+          {contacts.length} contact{contacts.length === 1 ? '' : 's'} · {hooked} hooked
+          {toFind > 0 && ` · ${toFind} to find`}
         </span>
       </header>
-      {contacts.length > 0 ? (
+
+      {open && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 px-3 py-1.5 text-xs dark:border-zinc-800">
+          {inIndex && (
+            <button
+              onClick={() => navigate(account.id)}
+              className="text-info-500 hover:underline dark:text-info-400"
+            >
+              open dossier →
+            </button>
+          )}
+          <input
+            value={newFlag}
+            onChange={(e) => setNewFlag(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && newFlag.trim()) {
+                mutate(patchTrackerAccount(account.id, { flags: [...account.flags, newFlag.trim()] }))
+                setNewFlag('')
+              }
+            }}
+            placeholder="+ flag ⏎"
+            aria-label="Add flag"
+            className="w-24 rounded border border-transparent bg-transparent px-1 py-0.5 outline-none hover:border-zinc-300 focus:border-primary-500 dark:hover:border-zinc-700"
+          />
+          <span className="ml-auto flex items-center gap-2 text-zinc-500">
+            {researched && (
+              <button
+                onClick={importFromDossier}
+                disabled={busy || importing}
+                title="Import named ICP contacts from the research dossier"
+                className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+              >
+                {importing ? 'importing…' : '⤓ dossier contacts'}
+              </button>
+            )}
+            <button
+              onClick={() => mutate(addTrackerContact({ accountId: account.id }))}
+              disabled={busy}
+              className="rounded border border-zinc-300 px-2 py-0.5 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              + contact
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm(`Remove ${account.name} and its ${contacts.length} contact row(s) from the tracker? (SF + research dossier untouched)`)) {
+                  mutate(deleteTrackerAccount(account.id))
+                }
+              }}
+              disabled={busy}
+              aria-label="Remove account from tracker"
+              className="text-zinc-400 hover:text-brand-500 disabled:opacity-50"
+            >
+              remove ✕
+            </button>
+          </span>
+        </div>
+      )}
+
+      {open && contacts.length > 0 ? (
         <div className="overflow-x-auto px-3 pb-2">
           <table className="w-full min-w-[56rem] text-sm">
             <thead>
@@ -369,16 +533,17 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
                   onDelete={(id) => mutate(deleteTrackerContact(id))}
                   targeted={c.id === targetId}
                   onTarget={onTarget}
+                  onDraft={onDraft}
                 />
               ))}
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : open ? (
         <p className="px-3 py-2 text-xs text-zinc-500">
           No contact rows yet — “+ contact” adds a to-find placeholder{researched ? ', or pull the dossier’s ICP contacts in' : ''}.
         </p>
-      )}
+      ) : null}
     </section>
   )
 }
@@ -388,6 +553,7 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
 // is just who's being worked, at what step, with what hook.
 export default function AccountsPage({ tracker, index, outreach, busy, mutate, navigate, targetId, onTarget, onSync, syncPending }) {
   const [query, setQuery] = useState('')
+  const [draftFor, setDraftFor] = useState(null) // contact being drafted for
 
   // Groove-mirror lookup: sfContactId is authoritative; bare name match is the
   // fallback for rows created before the id existed (collision risk accepted).
@@ -488,9 +654,18 @@ export default function AccountsPage({ tracker, index, outreach, busy, mutate, n
             targetId={targetId}
             onTarget={onTarget}
             matchOutreach={matchOutreach}
+            onDraft={setDraftFor}
           />
         ))}
       </div>
+
+      {draftFor && (
+        <DraftPanel
+          contact={draftFor}
+          accountName={tracker.accounts.find((a) => a.id === draftFor.accountId)?.name ?? draftFor.accountId}
+          onClose={() => setDraftFor(null)}
+        />
+      )}
     </div>
   )
 }

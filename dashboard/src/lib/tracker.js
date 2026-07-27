@@ -36,6 +36,9 @@ export const addTrackerAccount = (account) => api('/api/tracker/accounts', json(
 export const patchTrackerAccount = (id, patch) => api(`/api/tracker/accounts/${id}`, json('PATCH', patch))
 export const deleteTrackerAccount = (id) => api(`/api/tracker/accounts/${id}`, { method: 'DELETE' })
 export const addTrackerContact = (contact) => api('/api/tracker/contacts', json('POST', contact))
+// Send desk: server-side draft (enrollment pack / next-step message) for a
+// contact — grounded on dossier + plays + Groove touch history. ~30-60s.
+export const requestDraft = (contactId, kind) => api('/api/draft', json('POST', { contactId, kind }))
 export const patchTrackerContact = (id, patch) => api(`/api/tracker/contacts/${id}`, json('PATCH', patch))
 export const deleteTrackerContact = (id) => api(`/api/tracker/contacts/${id}`, { method: 'DELETE' })
 

@@ -17,6 +17,7 @@ import {
   jobEvents,
 } from './lib/queue.js'
 import { handleChat } from './lib/chat.js'
+import { handleDraft } from './lib/draft.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
 import { trackerRouter } from './lib/tracker.js'
 
@@ -128,6 +129,11 @@ app.use('/api/tracker', trackerRouter)
 // Phase 6 — chat grounded on one account's research JSON. Direct Anthropic
 // API call (key from macOS Keychain), no MCPs; streams NDJSON back.
 app.post('/api/chat', handleChat)
+
+// Send desk — draft real messaging for one tracker contact (enrollment pack
+// or next-step message). Same client as chat; grounded on dossier + plays +
+// the Groove mirror's touch history.
+app.post('/api/draft', handleDraft)
 
 // 7G-1 — AI-visibility section update. Server-side completions (same client
 // as chat), ajv-validated atomic write; refreshed_at untouched. Also runs
