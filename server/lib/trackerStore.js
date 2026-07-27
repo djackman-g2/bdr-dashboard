@@ -223,12 +223,13 @@ function validateContactFields(patch, { forStep, forHook }) {
   }
 }
 
-export async function addContact({ accountId, persona, name, title, hook, nextAction, nextDate, status }) {
+export async function addContact({ accountId, persona, name, title, hook, nextAction, nextDate, status, sfContactId }) {
   if (!accountId || typeof accountId !== 'string') throw badInput('accountId is required')
   const contact = {
     id: randomUUID(),
     name: name?.trim() || null,
     title: title?.trim() || null,
+    sfContactId: sfContactId || null, // links the row to the SF/Groove task trail
     accountId,
     persona: persona ?? null,
     step: 1,
@@ -249,7 +250,7 @@ export async function addContact({ accountId, persona, name, title, hook, nextAc
 }
 
 export async function patchContact(id, patch) {
-  const allowed = ['name', 'title', 'persona', 'step', 'hook', 'nextAction', 'nextDate', 'status', 'lastTouch']
+  const allowed = ['name', 'title', 'persona', 'step', 'hook', 'nextAction', 'nextDate', 'status', 'lastTouch', 'sfContactId']
   const clean = Object.fromEntries(Object.entries(patch ?? {}).filter(([k]) => allowed.includes(k)))
   let contact = null
   await updateStore((store) => {

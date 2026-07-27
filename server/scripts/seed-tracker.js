@@ -110,6 +110,7 @@ for (const row of rows) {
         name: ic.name,
         title: ic.title ?? null,
         persona: store.personaForTitle(ic.title),
+        sfContactId: ic.salesforce_contact_id ?? null,
       }
       if (DRY) console.log(`    would add contact ${ic.name} (${ic.title ?? '—'}) → ${contact.persona ?? 'no persona match'}`)
       else await addContact(contact)

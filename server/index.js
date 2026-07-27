@@ -91,11 +91,14 @@ app.post('/api/refresh', async (req, res) => {
   if (typeof query !== 'string' || !query.trim() || query.length > 200) {
     return res.status(400).json({ error: 'query must be a non-empty string (domain, name, SF Id, or "ALL")' })
   }
-  if (mode !== 'light' && mode !== 'deep' && mode !== 'activity' && mode !== 'section') {
-    return res.status(400).json({ error: 'mode must be "light", "deep", "activity", or "section"' })
+  if (!['light', 'deep', 'activity', 'section', 'outreach'].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be "light", "deep", "activity", "section", or "outreach"' })
   }
-  if (query.trim() === 'ALL' && mode !== 'light') {
+  if (query.trim() === 'ALL' && mode !== 'light' && mode !== 'outreach') {
     return res.status(400).json({ error: `${mode} refresh is per-account only — no ${mode} ALL` })
+  }
+  if (mode === 'outreach' && query.trim() !== 'ALL') {
+    return res.status(400).json({ error: 'outreach sync is global — use query "ALL"' })
   }
   if (mode === 'section' && !SECTIONS.includes(section)) {
     return res.status(400).json({ error: `section must be one of: ${SECTIONS.join(', ')}` })

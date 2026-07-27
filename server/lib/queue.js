@@ -129,7 +129,11 @@ async function processNext() {
   // section run EXCEPT contacts are free by contract. Only the contacts
   // section (capped enrich, see config.zoominfo.max_section_contact_enrich)
   // and light/deep pipeline runs may reach ZoomInfo at all.
-  if (job.mode === 'activity' || (job.mode === 'section' && job.section !== 'contacts')) {
+  if (
+    job.mode === 'activity' ||
+    job.mode === 'outreach' ||
+    (job.mode === 'section' && job.section !== 'contacts')
+  ) {
     disallowed.push('mcp__claude_ai_ZoomInfo__*')
   }
   if (disallowed.length) args.push('--disallowedTools', disallowed.join(','))
@@ -190,7 +194,8 @@ async function finishJob(job, result) {
     m.job_queue = (m.job_queue ?? []).filter((j) => j.id !== job.id)
     if (result.ok) {
       if (job.mode === 'light') m.last_light_refresh_at = finished_at
-      else m.last_deep_refresh_at = finished_at
+      else if (job.mode === 'deep') m.last_deep_refresh_at = finished_at
+      else if (job.mode === 'outreach') m.last_outreach_sync_at = finished_at
     } else {
       // The pipeline logs its own runs; when a job dies before it can, the
       // failure must still be loud in the run log — never a silent no-op.
@@ -223,6 +228,14 @@ async function finishJob(job, result) {
         if (run) run.notes = [...(run.notes ?? []), note]
       })
     }
+  }
+
+  // Groove mirror: the nightly light run means the book is fresh — follow it
+  // with an outreach sync so the tracker's flow positions are fresh too.
+  if (result.ok && job.mode === 'light' && job.query === 'ALL' && config.outreach?.sync_after_light !== false) {
+    enqueue({ query: 'ALL', mode: 'outreach', trigger: 'after-light', origin: 'auto' }).then((r) => {
+      if (r.error && r.error !== 'duplicate') console.error(`[outreach] auto-sync not queued: ${r.error}`)
+    })
   }
 
   emit(result.ok ? 'finished' : 'failed', job, {
@@ -267,11 +280,13 @@ async function buildPrompt(job) {
   const file =
     job.query === 'ALL' && job.mode === 'light'
       ? 'refresh-all-light.md'
-      : job.mode === 'activity'
-        ? 'refresh-activity.md'
-        : job.mode === 'section'
-          ? 'refresh-section.md'
-          : 'refresh-account.md'
+      : job.mode === 'outreach'
+        ? 'refresh-outreach.md'
+        : job.mode === 'activity'
+          ? 'refresh-activity.md'
+          : job.mode === 'section'
+            ? 'refresh-section.md'
+            : 'refresh-account.md'
   const body = await fsp.readFile(path.join(paths.promptsDir, file), 'utf8')
   return (
     body +

@@ -212,6 +212,7 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
             name: ic.name,
             title: ic.title ?? null,
             persona: personaForTitle(ic.title, tracker.personas),
+            sfContactId: ic.salesforce_contact_id ?? null,
           })
         )
       }

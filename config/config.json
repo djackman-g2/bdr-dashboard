@@ -32,7 +32,13 @@
     "playwright_in_scheduled_runs": false,
     "auto_queue_deep": false,
     "catchup_after_hours": 26,
-    "job_timeout_minutes": { "light": 90, "deep": 45, "activity": 10, "section": 15 }
+    "job_timeout_minutes": { "light": 90, "deep": 45, "activity": 10, "section": 15, "outreach": 15 }
+  },
+  "outreach": {
+    "_comment": "Groove mirror. Groove is SF-native — its sends/calls land as Tasks owned by the BDR; the outreach mode reads that trail into data/outreach.json (free, SF-only). connect_dispositions are PREFIX matches against CallDisposition. sync_after_light: auto-queue a sync after every successful nightly/catch-up light run.",
+    "window_days": 30,
+    "sync_after_light": true,
+    "connect_dispositions": ["Connect", "Referred to another person", "Hung up"]
   },
   "linkedin": {
     "_comment": "Verification tool, never a scraper. Only deep runs with origin 'user' may use it (server hard-blocks Playwright otherwise). Caps are per run; a failed/skipped lookup marks the contact unconfirmed and never blocks the pipeline.",
