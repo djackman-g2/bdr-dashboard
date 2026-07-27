@@ -119,12 +119,15 @@ function parseJson(text) {
 }
 
 export async function handleDraft(req, res) {
-  const { contactId, kind } = req.body ?? {}
+  const { contactId, kind, dueStep } = req.body ?? {}
   if (typeof contactId !== 'string' || !contactId) {
     return res.status(400).json({ error: 'contactId is required' })
   }
   if (kind !== 'pack' && kind !== 'next') {
     return res.status(400).json({ error: 'kind must be "pack" or "next"' })
+  }
+  if (dueStep != null && typeof dueStep !== 'string') {
+    return res.status(400).json({ error: 'dueStep must be a string' })
   }
 
   const store = await readStore()
@@ -159,6 +162,9 @@ export async function handleDraft(req, res) {
   const userPayload = [
     `TASK: draft a ${kind === 'pack' ? 'flow enrollment pack' : 'single next-step message'} for the contact below.`,
     `CONTACT: ${JSON.stringify({ name: contact.name, title: contact.title, persona: contact.persona, step: contact.step, hook: contact.hook || null, status: contact.status, nextAction: contact.nextAction })}`,
+    ...(dueStep
+      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point).`]
+      : []),
     personaEntry ? `PERSONA PROFILE (${contact.persona}): ${JSON.stringify(personaEntry)}` : 'PERSONA PROFILE: none assigned — infer carefully from the title, note it in the rationale.',
     `TRACKER ACCOUNT: ${JSON.stringify(account ?? { id: contact.accountId })}  (flags are coordination warnings — surface them)`,
     mirror

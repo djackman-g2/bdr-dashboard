@@ -22,6 +22,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { config, paths } from '../lib/config.js'
+import { parseCsv, csvField } from '../lib/csv.js'
 import * as store from '../lib/trackerStore.js'
 
 const args = process.argv.slice(2)
@@ -38,46 +39,6 @@ if (!file) {
 const DRY = flag('dry-run')
 const ONLY = opt('accounts')?.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 const UPGRADE = opt('upgrade') ? parseInt(opt('upgrade'), 10) : 0
-
-// ---------- minimal RFC-4180 CSV (quoted fields hold multiline HTML) ----------
-function parseCsv(text) {
-  const rows = []
-  let row = []
-  let field = ''
-  let inQuotes = false
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i]
-    if (inQuotes) {
-      if (c === '"') {
-        if (text[i + 1] === '"') {
-          field += '"'
-          i++
-        } else inQuotes = false
-      } else field += c
-    } else if (c === '"') inQuotes = true
-    else if (c === ',') {
-      row.push(field)
-      field = ''
-    } else if (c === '\n' || c === '\r') {
-      if (c === '\r' && text[i + 1] === '\n') i++
-      row.push(field)
-      field = ''
-      if (row.some((f) => f !== '')) rows.push(row)
-      row = []
-    } else field += c
-  }
-  if (field !== '' || row.length) {
-    row.push(field)
-    if (row.some((f) => f !== '')) rows.push(row)
-  }
-  const header = rows.shift()
-  return rows.map((r) => Object.fromEntries(header.map((h, i) => [h, r[i] ?? ''])))
-}
-
-const csvField = (v) => {
-  const s = String(v ?? '')
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-}
 
 const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
