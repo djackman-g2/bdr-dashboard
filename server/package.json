@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "seed:tracker": "node scripts/seed-tracker.js",
+    "import:pipeline": "node scripts/import-pipeline-csv.js",
     "linkedin:login": "node scripts/linkedin-login.js",
     "linkedin:check": "node scripts/linkedin-session-check.js"
   },
