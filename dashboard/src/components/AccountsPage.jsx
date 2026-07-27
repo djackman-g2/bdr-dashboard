@@ -367,10 +367,40 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
   )
 }
 
-function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate, targetId, onTarget, matchOutreach, onDraft }) {
+function AccountCard({ account, contacts, tracker, index, outreach, busy, mutate, navigate, targetId, onTarget, matchOutreach, onDraft }) {
   const [open, setOpen] = useState(false)
   const [newFlag, setNewFlag] = useState('')
   const [importing, setImporting] = useState(false)
+
+  // Mirror contacts on this account (matched by SF account id, name fallback)
+  // that have no tracker row yet — people worked in Groove/Sales Nav that the
+  // tracker never saw. One click pulls them in.
+  const grooveMissing = useMemo(() => {
+    if (!outreach) return []
+    const haveIds = new Set(contacts.map((c) => c.sfContactId).filter(Boolean))
+    const haveNames = new Set(contacts.map((c) => c.name?.toLowerCase()).filter(Boolean))
+    return outreach.contacts.filter(
+      (o) =>
+        (o.sf_account_id === account.sfId || o.account_name?.toLowerCase() === account.name.toLowerCase()) &&
+        o.name &&
+        !haveIds.has(o.sf_contact_id) &&
+        !haveNames.has(o.name.toLowerCase())
+    )
+  }, [outreach, contacts, account])
+
+  const importFromGroove = async () => {
+    for (const o of grooveMissing) {
+      await mutate(
+        addTrackerContact({
+          accountId: account.id,
+          name: o.name,
+          title: o.title ?? null,
+          persona: personaForTitle(o.title, tracker.personas),
+          sfContactId: o.sf_contact_id,
+        })
+      )
+    }
+  }
   const singleThreaded = account.playType && account.threadIds.length < 2
   const inIndex = (index?.accounts ?? []).find((a) => a.slug === account.id)
   const researched = inIndex?.status === 'active'
@@ -455,6 +485,9 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
         <span className="ml-auto text-xs whitespace-nowrap text-zinc-500 tabular-nums">
           {contacts.length} contact{contacts.length === 1 ? '' : 's'} · {hooked} hooked
           {toFind > 0 && ` · ${toFind} to find`}
+          {grooveMissing.length > 0 && (
+            <span className="text-primary-600 dark:text-primary-400"> · {grooveMissing.length} untracked in Groove</span>
+          )}
         </span>
       </header>
 
@@ -482,6 +515,16 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
             className="w-24 rounded border border-transparent bg-transparent px-1 py-0.5 outline-none hover:border-zinc-300 focus:border-primary-500 dark:hover:border-zinc-700"
           />
           <span className="ml-auto flex items-center gap-2 text-zinc-500">
+            {grooveMissing.length > 0 && (
+              <button
+                onClick={importFromGroove}
+                disabled={busy}
+                title={`Add contacts you've touched in Groove/Sales Nav but aren't tracked: ${grooveMissing.map((o) => o.name).join(', ')}`}
+                className="rounded border border-primary-300 px-2 py-0.5 text-primary-700 hover:bg-primary-50 disabled:opacity-50 dark:border-primary-700 dark:text-primary-300 dark:hover:bg-primary-950/40"
+              >
+                ⤓ {grooveMissing.length} from Groove
+              </button>
+            )}
             {researched && (
               <button
                 onClick={importFromDossier}
@@ -557,6 +600,76 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
           No contact rows yet — “+ contact” adds a to-find placeholder{researched ? ', or pull the dossier’s ICP contacts in' : ''}.
         </p>
       ) : null}
+    </section>
+  )
+}
+
+// Accounts you're actively touching in Groove/Sales Nav (per the SF task
+// trail) that aren't in the tracker at all — the Monday-list crowd. One click
+// creates the account (with its SF id) and pulls its touched contacts in.
+function GrooveUntracked({ outreach, tracker, busy, mutate }) {
+  const groups = useMemo(() => {
+    if (!outreach || !tracker) return []
+    const haveSfIds = new Set(tracker.accounts.map((a) => a.sfId).filter(Boolean))
+    const haveNames = new Set(tracker.accounts.map((a) => a.name.toLowerCase()))
+    const byAccount = new Map()
+    for (const o of outreach.contacts) {
+      if (!o.name || !o.account_name) continue
+      if (haveSfIds.has(o.sf_account_id) || haveNames.has(o.account_name.toLowerCase())) continue
+      const key = o.sf_account_id ?? o.account_name
+      if (!byAccount.has(key)) byAccount.set(key, { name: o.account_name, sfId: o.sf_account_id, contacts: [] })
+      byAccount.get(key).contacts.push(o)
+    }
+    return [...byAccount.values()].sort((a, b) => b.contacts.length - a.contacts.length)
+  }, [outreach, tracker])
+
+  if (groups.length === 0) return null
+
+  const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+  const addAccount = async (g) => {
+    await mutate(addTrackerAccount({ id: slugify(g.name), name: g.name, sfId: g.sfId ?? null }))
+    for (const o of g.contacts) {
+      await mutate(
+        addTrackerContact({
+          accountId: slugify(g.name),
+          name: o.name,
+          title: o.title ?? null,
+          persona: personaForTitle(o.title, tracker.personas),
+          sfContactId: o.sf_contact_id,
+        })
+      )
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-lg border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
+      <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">
+        In Groove, not in the tracker
+      </h2>
+      <p className="mt-1 text-xs text-zinc-500">
+        Accounts with touches in the Salesforce task trail (last {outreach.window_days} days) that have no tracker row —
+        flow enrollments, Sales Nav pulls, the Monday list. Add the ones you're actually working.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {groups.map((g) => (
+          <li key={g.sfId ?? g.name} className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-medium">{g.name}</span>
+            <span className="text-xs text-zinc-500">
+              {g.contacts.length} contact{g.contacts.length === 1 ? '' : 's'}:{' '}
+              {g.contacts.slice(0, 4).map((o) => o.name).join(', ')}
+              {g.contacts.length > 4 ? '…' : ''}
+            </span>
+            <button
+              onClick={() => addAccount(g)}
+              disabled={busy}
+              className="ml-auto rounded border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+            >
+              + add to tracker
+            </button>
+          </li>
+        ))}
+      </ul>
     </section>
   )
 }
@@ -661,6 +774,7 @@ export default function AccountsPage({ tracker, index, outreach, busy, mutate, n
             contacts={contactsFor(a.id)}
             tracker={tracker}
             index={index}
+            outreach={outreach}
             busy={busy}
             mutate={mutate}
             navigate={navigate}
@@ -671,6 +785,8 @@ export default function AccountsPage({ tracker, index, outreach, busy, mutate, n
           />
         ))}
       </div>
+
+      <GrooveUntracked outreach={outreach} tracker={tracker} busy={busy} mutate={mutate} />
 
       {draftFor && (
         <DraftPanel

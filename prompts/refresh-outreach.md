@@ -24,6 +24,8 @@ ORDER BY CreatedDate DESC LIMIT 2000
 
 Deliberately NO `Description` — subjects and metadata are enough for the mirror; message bodies stay in SF and are pulled per-account only when the drafting engine needs them. Large result sets get saved to a session tool-results file — process from there with jq, never Read the whole thing.
 
+Then fetch titles for the touched contacts (the tracker's persona matching needs them; Task rows don't carry titles): collect the distinct `WhoId`s that start with `003` (Contact records) and run `SELECT Id, Title FROM Contact WHERE Id IN (...)` in chunks of ≤ 400 ids. Missing/null titles are fine — record null.
+
 ## Step 2 — Classify each task
 
 Groove/SalesNav subject conventions (verified in this org 2026-07-26):
@@ -53,7 +55,7 @@ Build and write `data/outreach.json` (temp file ending in `.json`, then move/cat
   "task_count": 0,
   "contacts": [
     {
-      "sf_contact_id": "003…", "name": "<Who.Name>",
+      "sf_contact_id": "003…", "name": "<Who.Name>", "title": "<Contact.Title or null>",
       "sf_account_id": "001…", "account_name": "<Account.Name>",
       "last_outbound": "<ISO>", "last_inbound": "<ISO or null>", "replied": false,
       "flow": "<latest flow name seen or null>", "flow_day": null,
