@@ -142,6 +142,33 @@ const capped = targets.slice(0, LIMIT)
 if (capped.length < targets.length) console.log(`--limit ${LIMIT}: drafting ${capped.length} of ${targets.length}`)
 console.log(`drafting ${capped.length} message(s)…`)
 
+const date = new Date().toISOString().slice(0, 10)
+const outDir = path.join(paths.dataDir, 'drafts')
+const jsonFile = path.join(outDir, `due-${date}.json`)
+
+// Colleagues at one account compare inboxes — every draft sees what was
+// already written for that account (earlier today + this run) and must take
+// a different angle. Prior entries being redrafted right now don't count.
+const targetIds = new Set(capped.map((t) => t.contact.id))
+let prior = []
+try {
+  prior = JSON.parse(await fs.readFile(jsonFile, 'utf8')).drafts ?? []
+} catch {
+  /* first run today */
+}
+const summarize = (e) => {
+  const opening = (e.draft.body ?? '').split('\n')[0].slice(0, 120)
+  return `- ${e.name}: play=${e.draft.play}, subject="${e.draft.subject ?? '—'}", opening="${opening}"`
+}
+const historyByAccount = new Map()
+const rememberDraft = (account, entry) => {
+  if (!historyByAccount.has(account)) historyByAccount.set(account, [])
+  historyByAccount.get(account).push(summarize(entry))
+}
+for (const e of prior) {
+  if (e.draft && !targetIds.has(e.contactId)) rememberDraft(e.account, e)
+}
+
 const results = []
 for (const { row, contact } of capped) {
   process.stdout.write(`  ${row.Name} @ ${row.Account} … `)
@@ -153,11 +180,17 @@ for (const { row, contact } of capped) {
     contactId: contact.id,
     step: row['Current Step'] || null,
   }
+  const history = historyByAccount.get(row.Account) ?? []
   try {
     const res = await fetch(`${BASE}/api/draft`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contactId: contact.id, kind: 'next', dueStep: row['Current Step'] || undefined }),
+      body: JSON.stringify({
+        contactId: contact.id,
+        kind: 'next',
+        dueStep: row['Current Step'] || undefined,
+        batchContext: history.length ? history.slice(-10).join('\n') : undefined,
+      }),
     })
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`)
     let done = null
@@ -170,6 +203,7 @@ for (const { row, contact } of capped) {
     if (!done?.draft?.body) throw new Error('no parsed draft')
     entry.draft = done.draft
     results.push(entry)
+    rememberDraft(row.Account, entry)
     console.log(`✓ ${done.draft.play} (${done.draft.channel})${done.draft.flag_warnings?.length ? ` ⚑${done.draft.flag_warnings.length}` : ''}`)
   } catch (err) {
     entry.error = err.message
@@ -178,22 +212,23 @@ for (const { row, contact } of capped) {
   }
 }
 
-// ---------- write outputs ----------
-const date = new Date().toISOString().slice(0, 10)
-const outDir = path.join(paths.dataDir, 'drafts')
+// ---------- write outputs (merge into the day file — partial re-runs keep the rest) ----------
 await fs.mkdir(outDir, { recursive: true })
+const mergedMap = new Map()
+for (const e of prior) mergedMap.set(e.contactId ?? e.name, e)
+for (const r of results) mergedMap.set(r.contactId ?? r.name, r)
+const merged = [...mergedMap.values()]
 
-const jsonFile = path.join(outDir, `due-${date}.json`)
 await fs.writeFile(
   jsonFile,
-  JSON.stringify({ date, source: path.basename(file), generated_at: new Date().toISOString(), drafts: results }, null, 2)
+  JSON.stringify({ date, source: path.basename(file), generated_at: new Date().toISOString(), drafts: merged }, null, 2)
 )
 
-const ok = results.filter((r) => r.draft)
-const failed = results.filter((r) => r.error)
-const md = [`# Due drafts — ${date}`, '', `${results.length} due · ${ok.length} drafted · ${failed.length} failed`]
+const ok = merged.filter((r) => r.draft)
+const failed = merged.filter((r) => r.error)
+const md = [`# Due drafts — ${date}`, '', `${merged.length} due · ${ok.length} drafted · ${failed.length} failed`]
 const byAccount = new Map()
-for (const r of results) {
+for (const r of merged) {
   if (!byAccount.has(r.account)) byAccount.set(r.account, [])
   byAccount.get(r.account).push(r)
 }
@@ -215,6 +250,10 @@ for (const [account, list] of byAccount) {
 const mdFile = path.join(outDir, `due-${date}.md`)
 await fs.writeFile(mdFile, md.join('\n') + '\n')
 
-console.log(`\ndone: ${ok.length}/${results.length} drafted${failed.length ? `, ${failed.length} failed (kept in the file)` : ''}`)
+console.log(
+  `\ndone: ${results.filter((r) => r.draft).length}/${results.length} drafted this run — day file: ${ok.length} drafted` +
+    (failed.length ? `, ${failed.length} failed (kept)` : '') +
+    ` of ${merged.length}`
+)
 console.log(`  ${jsonFile}`)
 console.log(`  ${mdFile}`)

@@ -119,7 +119,7 @@ function parseJson(text) {
 }
 
 export async function handleDraft(req, res) {
-  const { contactId, kind, dueStep } = req.body ?? {}
+  const { contactId, kind, dueStep, batchContext } = req.body ?? {}
   if (typeof contactId !== 'string' || !contactId) {
     return res.status(400).json({ error: 'contactId is required' })
   }
@@ -128,6 +128,9 @@ export async function handleDraft(req, res) {
   }
   if (dueStep != null && typeof dueStep !== 'string') {
     return res.status(400).json({ error: 'dueStep must be a string' })
+  }
+  if (batchContext != null && typeof batchContext !== 'string') {
+    return res.status(400).json({ error: 'batchContext must be a string' })
   }
 
   const store = await readStore()
@@ -163,7 +166,10 @@ export async function handleDraft(req, res) {
     `TASK: draft a ${kind === 'pack' ? 'flow enrollment pack' : 'single next-step message'} for the contact below.`,
     `CONTACT: ${JSON.stringify({ name: contact.name, title: contact.title, persona: contact.persona, step: contact.step, hook: contact.hook || null, status: contact.status, nextAction: contact.nextAction })}`,
     ...(dueStep
-      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point).`]
+      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point). If the step is an email step ("Send email template"), channel MUST be "email".`]
+      : []),
+    ...(batchContext
+      ? [`ALREADY DRAFTED for colleagues at this account today — assume they forward and compare emails:\n${batchContext.slice(0, 4000)}\nHard requirement: do NOT reuse any of these subjects, opening lines, or hook framings. Take a genuinely different angle for THIS person: a different proof point, a different facet (head-to-head result vs category absence vs review-equity vs news/hiring), or the next-best grounded play — and tie it to THIS person's role. Near-identical emails across colleagues read as blast automation and burn the whole account.`]
       : []),
     personaEntry ? `PERSONA PROFILE (${contact.persona}): ${JSON.stringify(personaEntry)}` : 'PERSONA PROFILE: none assigned — infer carefully from the title, note it in the rationale.',
     `TRACKER ACCOUNT: ${JSON.stringify(account ?? { id: contact.accountId })}  (flags are coordination warnings — surface them)`,
