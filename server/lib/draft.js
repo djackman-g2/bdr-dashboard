@@ -150,6 +150,11 @@ export async function handleDraft(req, res) {
     })
   }
 
+  // Packs think deeply (14 days of touches ride on them); next-step drafts run
+  // at low effort — adaptive thinking stays on (cheap, avoids the
+  // disabled-thinking pitfalls) but spends far less, so responses land fast.
+  const effort = kind === 'next' ? 'low' : 'high'
+
   const personaEntry = contact.persona ? personas[contact.persona] : null
   const userPayload = [
     `TASK: draft a ${kind === 'pack' ? 'flow enrollment pack' : 'single next-step message'} for the contact below.`,
@@ -163,11 +168,22 @@ export async function handleDraft(req, res) {
     kind === 'pack' ? PACK_CONTRACT : NEXT_CONTRACT,
   ].join('\n\n')
 
+  // NDJSON stream (same shape as chat): {type:"delta",text} while the model
+  // writes, then {type:"done", draft, raw?, usage} once the JSON is parsed.
+  // The panel shows the text live and swaps to the structured view on done.
+  res.writeHead(200, {
+    'Content-Type': 'application/x-ndjson',
+    'Cache-Control': 'no-store',
+    Connection: 'keep-alive',
+  })
+  const send = (obj) => res.write(JSON.stringify(obj) + '\n')
+
   try {
-    const msg = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: MODEL,
       max_tokens: MAX_TOKENS,
       thinking: { type: 'adaptive' },
+      output_config: { effort },
       system: [
         { type: 'text', text: SYSTEM },
         // Plays + stats change rarely — cache across drafts for any contact.
@@ -179,21 +195,33 @@ export async function handleDraft(req, res) {
       ],
       messages: [{ role: 'user', content: userPayload }],
     })
-    const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
-    const draft = parseJson(text)
-    res.json({
-      contactId,
-      kind,
-      draft,
-      ...(draft ? {} : { raw: text }),
-      usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens },
-    })
+
+    stream.on('text', (delta) => send({ type: 'delta', text: delta }))
+
+    const msg = await stream.finalMessage()
+    if (msg.stop_reason === 'refusal') {
+      send({ type: 'error', error: 'Claude declined to draft this request.' })
+    } else {
+      const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
+      const draft = parseJson(text)
+      send({
+        type: 'done',
+        contactId,
+        kind,
+        draft,
+        ...(draft ? {} : { raw: text }),
+        usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens },
+      })
+    }
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) {
       invalidateClient()
-      return res.status(503).json({ error: 'Anthropic API key was rejected — update the Keychain entry and retry.' })
+      send({ type: 'error', error: 'Anthropic API key was rejected — update the Keychain entry and retry.' })
+    } else {
+      console.error('[draft] error:', err)
+      send({ type: 'error', error: err.message ?? 'draft failed' })
     }
-    console.error('[draft] error:', err)
-    res.status(502).json({ error: err.message ?? 'draft failed' })
+  } finally {
+    res.end()
   }
 }

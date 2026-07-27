@@ -6,7 +6,7 @@ import {
   addTrackerContact,
   patchTrackerContact,
   deleteTrackerContact,
-  requestDraft,
+  streamDraft,
   personaForTitle,
   personaLabel,
 } from '../lib/tracker.js'
@@ -35,16 +35,21 @@ function CopyBtn({ text, label = 'copy' }) {
 function DraftPanel({ contact, accountName, onClose }) {
   const [kind, setKind] = useState('pack')
   const [state, setState] = useState({ status: 'loading' })
+  const [live, setLive] = useState('') // streamed text while the model writes
 
   useEffect(() => {
-    let cancelled = false
+    const ctrl = new AbortController()
     setState({ status: 'loading' })
-    requestDraft(contact.id, kind)
-      .then((r) => !cancelled && setState({ status: 'done', ...r }))
-      .catch((e) => !cancelled && setState({ status: 'error', error: e.message }))
-    return () => {
-      cancelled = true
-    }
+    setLive('')
+    streamDraft(contact.id, kind, {
+      signal: ctrl.signal,
+      onDelta: (t) => setLive((s) => s + t),
+      onDone: (r) => setState({ status: 'done', ...r }),
+      onError: (e) => setState({ status: 'error', error: e.message }),
+    }).catch((e) => {
+      if (e.name !== 'AbortError') setState({ status: 'error', error: e.message })
+    })
+    return () => ctrl.abort()
   }, [contact.id, kind])
 
   const d = state.draft
@@ -98,11 +103,19 @@ function DraftPanel({ contact, accountName, onClose }) {
           </div>
         </div>
 
-        {state.status === 'loading' && (
-          <p className="mt-6 animate-pulse text-center text-sm text-zinc-500 motion-reduce:animate-none">
-            Drafting from dossier + plays + Groove history… (~30–60s)
-          </p>
-        )}
+        {state.status === 'loading' &&
+          (live ? (
+            // Raw JSON streaming in — not pretty, but watching it write beats a
+            // spinner; the structured card replaces it the moment it's done.
+            <pre className="mt-3 max-h-80 overflow-y-auto rounded border border-zinc-200 bg-zinc-50 p-2 text-xs whitespace-pre-wrap text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
+              {live}
+              <span className="animate-pulse motion-reduce:animate-none">▌</span>
+            </pre>
+          ) : (
+            <p className="mt-6 animate-pulse text-center text-sm text-zinc-500 motion-reduce:animate-none">
+              Reading dossier + plays + Groove history…{kind === 'next' ? '' : ' (pack takes ~30s of thinking before writing)'}
+            </p>
+          ))}
         {state.status === 'error' && (
           <p className="mt-4 rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
             {state.error}

@@ -37,8 +37,34 @@ export const patchTrackerAccount = (id, patch) => api(`/api/tracker/accounts/${i
 export const deleteTrackerAccount = (id) => api(`/api/tracker/accounts/${id}`, { method: 'DELETE' })
 export const addTrackerContact = (contact) => api('/api/tracker/contacts', json('POST', contact))
 // Send desk: server-side draft (enrollment pack / next-step message) for a
-// contact — grounded on dossier + plays + Groove touch history. ~30-60s.
-export const requestDraft = (contactId, kind) => api('/api/draft', json('POST', { contactId, kind }))
+// contact — grounded on dossier + plays + Groove touch history. The server
+// streams NDJSON ({delta}/{done}/{error} lines) so the panel can render the
+// draft as it's written instead of spinning until it's finished.
+export async function streamDraft(contactId, kind, { onDelta, onDone, onError, signal } = {}) {
+  const res = await fetch('/api/draft', { ...json('POST', { contactId, kind }), signal })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body.error ?? `draft failed: HTTP ${res.status}`)
+  }
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let nl
+    while ((nl = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, nl).trim()
+      buf = buf.slice(nl + 1)
+      if (!line) continue
+      const evt = JSON.parse(line)
+      if (evt.type === 'delta') onDelta?.(evt.text)
+      else if (evt.type === 'done') onDone?.(evt)
+      else if (evt.type === 'error') onError?.(new Error(evt.error))
+    }
+  }
+}
 export const patchTrackerContact = (id, patch) => api(`/api/tracker/contacts/${id}`, json('PATCH', patch))
 export const deleteTrackerContact = (id) => api(`/api/tracker/contacts/${id}`, { method: 'DELETE' })
 
