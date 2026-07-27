@@ -37,6 +37,8 @@ Hard rules — violating any of these makes the output unusable:
 
 Choose the best play from the library using its trigger table (winback beats generic if CRM history shows churn; aeo-screenshot needs an ai_visibility result; etc.). Personalize from dossier facts: top_signal, ai_visibility results, news, hiring, G2 review counts, CRM history.
 
+STRUCTURE is governed by anatomy.md in the library: compose each email from its slots (BRIDGE from a real event or Tier-1 closed-lost context only; ONE HOOK; SOCIAL PROOF only with real named-competitor data, else skip), persona routing adjusts expression, CTA comes from the by-role table (never "15-minute call"), and the per-message word/character limits are hard limits. Loss reasons route tone but never appear in copy.
+
 Output STRICT JSON only — no markdown fences, no commentary outside the JSON.`
 
 const PACK_CONTRACT = `Return JSON:
@@ -45,14 +47,14 @@ const PACK_CONTRACT = `Return JSON:
   "rationale": "<2-3 sentences: why this play, which account facts you used>",
   "flag_warnings": ["<any account flags, verbatim>"],
   "emails": [
-    {"slot": "email1", "subject": "...", "body": "..."},
+    {"slot": "email1", "subject": "...", "subject_b": "<A/B variant>", "body": "..."},
     {"slot": "email2", "subject": "...", "body": "..."},
     {"slot": "email3", "subject": "...", "body": "..."}
   ],
-  "linkedin_inmail": "<InMail body, <=100 words>",
+  "linkedin_inmail": "<InMail body, 300 CHARACTERS max, no links, no emojis>",
   "call_points": ["<3-5 bullet talking points for the flow's call steps>"]
 }
-The three emails are Days 1/7/14 of the flow: they must escalate as a coherent thread (email2 references "my last note", email3 is the sharpest/shortest), never repeat the same proof point twice. Bodies are plain text, line breaks as \\n, 60-120 words each, no HTML.`
+The three emails are Days 1/7/14 of the flow and must follow anatomy.md exactly: email1 = opener 120-160 words (signal/scoop -> their challenge -> one G2 capability -> role CTA); email2 = NEW angle 100-140 words with a brief callback to email1, same CTA; email3 = permission-to-close 60-80 words MAX, no calendar link, one async value item, easy to say no. Never repeat a proof point across emails. Bodies are plain prose, line breaks as \\n, no HTML, no bullets.`
 
 const NEXT_CONTRACT = `Return JSON:
 {
