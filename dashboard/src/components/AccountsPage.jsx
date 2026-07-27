@@ -27,7 +27,9 @@ const selectCls =
 // One inline-editable contact row. Text fields save on blur; selects on
 // change. Rows without a hook render red and the step "+" is blocked —
 // no hook, no advance (the server enforces it too).
-function ContactRow({ c, personas, statuses, busy, onPatch, onDelete, targeted, onTarget }) {
+// Groove-mirror data for this contact (matched by sfContactId, name fallback).
+// lastTouch and flow position come from the SF task trail — no manual entry.
+function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targeted, onTarget }) {
   const [draft, setDraft] = useState({
     name: c.name ?? '',
     title: c.title ?? '',
@@ -114,7 +116,20 @@ function ContactRow({ c, personas, statuses, busy, onPatch, onDelete, targeted, 
           </button>
         </span>
       </td>
-      <td className="py-1 pr-2 text-xs whitespace-nowrap text-zinc-500">{c.lastTouch ? relativeTime(c.lastTouch) : '—'}</td>
+      <td className="py-1 pr-2 text-xs whitespace-nowrap text-zinc-500">
+        {(() => {
+          const latest = [c.lastTouch, o?.last_outbound].filter(Boolean).sort().pop()
+          return latest ? relativeTime(latest) : '—'
+        })()}
+        {o?.flow_day != null && (
+          <div
+            className="text-[10px] text-primary-600 dark:text-primary-400"
+            title={o.flow ? `Groove flow: ${o.flow}` : 'Groove flow step'}
+          >
+            flow day {o.flow_day}
+          </div>
+        )}
+      </td>
       <td className="min-w-28 py-1 pr-2">
         <input
           value={draft.nextAction}
@@ -173,6 +188,16 @@ function ContactRow({ c, personas, statuses, busy, onPatch, onDelete, targeted, 
             </option>
           ))}
         </select>
+        {o?.replied && c.status !== 'replied' && c.status !== 'meeting' && (
+          <button
+            onClick={() => onPatch(c.id, { status: 'replied' })}
+            disabled={busy}
+            title={`Inbound email in Salesforce ${o.last_inbound ? relativeTime(o.last_inbound) : ''} — click to mark replied`}
+            className="ml-1 rounded-full border border-success-400 bg-success-100 px-1.5 text-[10px] text-success-700 dark:border-success-700 dark:bg-success-900/50 dark:text-success-300"
+          >
+            ✉ replied?
+          </button>
+        )}
       </td>
       <td className="py-1 text-right">
         <button
@@ -188,7 +213,7 @@ function ContactRow({ c, personas, statuses, busy, onPatch, onDelete, targeted, 
   )
 }
 
-function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate, targetId, onTarget }) {
+function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate, targetId, onTarget, matchOutreach }) {
   const [newFlag, setNewFlag] = useState('')
   const [importing, setImporting] = useState(false)
   const singleThreaded = account.playType && account.threadIds.length < 2
@@ -336,6 +361,7 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
                 <ContactRow
                   key={c.id}
                   c={c}
+                  o={matchOutreach(c)}
                   personas={tracker.personas}
                   statuses={tracker.contact_statuses}
                   busy={busy}
@@ -360,8 +386,24 @@ function AccountCard({ account, contacts, tracker, index, busy, mutate, navigate
 // #/accounts — the working layer over the book. Thin by design: Salesforce
 // stays system-of-record, the research dossiers stay the intel source; this
 // is just who's being worked, at what step, with what hook.
-export default function AccountsPage({ tracker, index, busy, mutate, navigate, targetId, onTarget }) {
+export default function AccountsPage({ tracker, index, outreach, busy, mutate, navigate, targetId, onTarget, onSync, syncPending }) {
   const [query, setQuery] = useState('')
+
+  // Groove-mirror lookup: sfContactId is authoritative; bare name match is the
+  // fallback for rows created before the id existed (collision risk accepted).
+  const outreachLookup = useMemo(() => {
+    const byId = new Map()
+    const byName = new Map()
+    for (const o of outreach?.contacts ?? []) {
+      if (o.sf_contact_id) byId.set(o.sf_contact_id, o)
+      if (o.name) byName.set(o.name.toLowerCase(), o)
+    }
+    return { byId, byName }
+  }, [outreach])
+  const matchOutreach = (c) =>
+    (c.sfContactId && outreachLookup.byId.get(c.sfContactId)) ||
+    (c.name && outreachLookup.byName.get(c.name.toLowerCase())) ||
+    null
 
   const candidates = useMemo(() => {
     const q = query.trim().toLowerCase()
@@ -384,7 +426,18 @@ export default function AccountsPage({ tracker, index, busy, mutate, navigate, t
         <h1 className="text-xl font-bold tracking-tight">Accounts</h1>
         <p className="text-sm text-zinc-500">
           {accounts.length} in play · {tracker.contacts.length} contact rows
+          {outreach && ` · Groove synced ${relativeTime(outreach.retrieved_at)}`}
         </p>
+        {onSync && (
+          <button
+            onClick={onSync}
+            disabled={busy || syncPending}
+            title="Pull the Groove/SF task trail (free, ~3 min)"
+            className="rounded-md border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            {syncPending ? '⟳ syncing…' : '⟳ sync Groove'}
+          </button>
+        )}
         <div className="relative ml-auto">
           <input
             value={query}
@@ -434,6 +487,7 @@ export default function AccountsPage({ tracker, index, busy, mutate, navigate, t
             navigate={navigate}
             targetId={targetId}
             onTarget={onTarget}
+            matchOutreach={matchOutreach}
           />
         ))}
       </div>

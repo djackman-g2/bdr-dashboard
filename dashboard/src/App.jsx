@@ -7,7 +7,7 @@ import ActivityBar from './components/ActivityBar.jsx'
 import ActivityPage from './components/ActivityPage.jsx'
 import AccountsPage from './components/AccountsPage.jsx'
 import DayPage from './components/DayPage.jsx'
-import { fetchIndex, fetchAccount, fetchActivity, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
+import { fetchIndex, fetchAccount, fetchActivity, fetchOutreach, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { fetchTracker, logActivity, undoActivity } from './lib/tracker.js'
 import { formatDateTime, relativeTime } from './lib/format.js'
 
@@ -159,6 +159,13 @@ export default function App() {
 
   const [suggestions, setSuggestions] = useState(null)
 
+  // Groove mirror — written by outreach-mode sync runs.
+  const [outreach, setOutreach] = useState(null)
+  const loadOutreach = useCallback(() => {
+    fetchOutreach().then(setOutreach)
+  }, [])
+  useEffect(loadOutreach, [loadOutreach])
+
   const loadIndex = useCallback(() => {
     fetchIndex().then(setIndex).catch((e) => setError(e.message))
   }, [])
@@ -217,6 +224,7 @@ export default function App() {
         if (e.path.endsWith('index.json')) loadIndex()
         if (e.path.endsWith('suggestions.json')) loadSuggestions()
         if (e.path.endsWith('tracker.json')) loadTracker() // keeps other tabs in sync
+        if (e.path.endsWith('outreach.json')) loadOutreach()
         const current = slugRef.current
         if (current && e.path.endsWith(`activity/${current}.json`)) {
           fetchActivity(current).then(setActivity)
@@ -238,7 +246,7 @@ export default function App() {
         if (e.type === 'finished') setNotice({ tone: 'ok', text: `Refresh finished: ${e.job.query}` })
       },
     })
-  }, [loadIndex, loadStatus, loadSuggestions, loadTracker])
+  }, [loadIndex, loadStatus, loadSuggestions, loadTracker, loadOutreach])
 
   const refresh = useCallback((q, mode, opts) => {
     setNotice(null)
@@ -417,11 +425,14 @@ export default function App() {
               <AccountsPage
                 tracker={tracker}
                 index={index}
+                outreach={outreach}
                 busy={trackerBusy}
                 mutate={trackerMutate}
                 navigate={navigate}
                 targetId={targetId}
                 onTarget={onTarget}
+                onSync={() => refresh('ALL', 'outreach')}
+                syncPending={jobFor('ALL')}
               />
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">

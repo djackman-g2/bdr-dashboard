@@ -29,6 +29,12 @@ export function fetchActivity(slug) {
   return fetchJson(`/data/activity/${slug}.json`).catch(() => null)
 }
 
+// Groove mirror (outreach-mode runs): the SF task trail — who was touched,
+// flow positions, replies, call dispositions. Absent until the first sync.
+export function fetchOutreach() {
+  return fetchJson('/data/outreach.json').catch(() => null)
+}
+
 // ---- Phase 3 server API (queue status, refresh, live events) ----
 
 export function fetchStatus() {
