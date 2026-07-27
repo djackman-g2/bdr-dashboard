@@ -18,6 +18,7 @@ import {
 } from './lib/queue.js'
 import { handleChat } from './lib/chat.js'
 import { handleDraft } from './lib/draft.js'
+import { startDueBatch, dueBatchStatus } from './lib/dueBatch.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
 import { trackerRouter } from './lib/tracker.js'
 
@@ -134,6 +135,31 @@ app.post('/api/chat', handleChat)
 // or next-step message). Same client as chat; grounded on dossier + plays +
 // the Groove mirror's touch history.
 app.post('/api/draft', handleDraft)
+
+// Send desk batch — the Due page uploads the Groove due-list CSV as text;
+// the server runs scripts/draft-due-csv.js (one next-step draft per row,
+// results land in data/drafts/) and the page polls GET for progress.
+app.post('/api/draft-due', express.text({ type: '*/*', limit: '2mb' }), async (req, res) => {
+  const csv = typeof req.body === 'string' ? req.body : ''
+  const header = csv.split('\n', 1)[0] ?? ''
+  if (!csv.trim()) return res.status(400).json({ error: 'body must be the CSV text' })
+  if (!/name/i.test(header) || !/account/i.test(header)) {
+    return res.status(400).json({ error: 'that does not look like the Groove due-list export (need Name + Account columns)' })
+  }
+  const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined
+  if (req.query.limit && (!Number.isFinite(limit) || limit < 1)) {
+    return res.status(400).json({ error: 'limit must be a positive integer' })
+  }
+  try {
+    const result = await startDueBatch(csv, { limit, dryRun: req.query.dryRun === '1' || req.query.dryRun === 'true' })
+    res.status(202).json(result)
+  } catch (err) {
+    if (err.code === 'busy') return res.status(409).json({ error: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.get('/api/draft-due', async (_req, res) => res.json(await dueBatchStatus()))
 
 // 7G-1 — AI-visibility section update. Server-side completions (same client
 // as chat), ajv-validated atomic write; refreshed_at untouched. Also runs

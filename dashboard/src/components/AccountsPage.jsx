@@ -12,7 +12,7 @@ import {
 } from '../lib/tracker.js'
 import { relativeTime } from '../lib/format.js'
 
-function CopyBtn({ text, label = 'copy' }) {
+export function CopyBtn({ text, label = 'copy' }) {
   const [copied, setCopied] = useState(false)
   return (
     <button

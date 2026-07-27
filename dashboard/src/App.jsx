@@ -7,6 +7,7 @@ import ActivityBar from './components/ActivityBar.jsx'
 import ActivityPage from './components/ActivityPage.jsx'
 import AccountsPage from './components/AccountsPage.jsx'
 import DayPage from './components/DayPage.jsx'
+import DuePage from './components/DuePage.jsx'
 import { fetchIndex, fetchAccount, fetchActivity, fetchOutreach, fetchStatus, fetchSuggestions, requestRefresh, subscribeEvents } from './lib/data.js'
 import { fetchTracker, logActivity, undoActivity } from './lib/tracker.js'
 import { formatDateTime, relativeTime } from './lib/format.js'
@@ -20,7 +21,7 @@ function useHashRoute() {
   }, [])
   const slug = hash.startsWith('#/account/') ? hash.slice('#/account/'.length) : null
   const view =
-    hash === '#/activity' ? 'activity' : hash === '#/accounts' ? 'accounts' : hash === '#/day' ? 'day' : slug ? 'account' : 'home'
+    hash === '#/activity' ? 'activity' : hash === '#/accounts' ? 'accounts' : hash === '#/day' ? 'day' : hash === '#/due' ? 'due' : slug ? 'account' : 'home'
   return [slug, view, (s) => (window.location.hash = s ? `#/account/${s}` : '')]
 }
 
@@ -309,6 +310,7 @@ export default function App() {
           BDR Account Research
         </button>
         {[
+          ['due', 'Due'],
           ['day', 'Day'],
           ['activity', 'Activity'],
           ['accounts', 'Accounts'],
@@ -446,6 +448,15 @@ export default function App() {
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">
                 The daily view needs the local server — it's offline (read-only mode).
+              </p>
+            ))}
+
+          {view === 'due' &&
+            (serverUp ? (
+              <DuePage />
+            ) : (
+              <p className="mt-10 text-center text-sm text-zinc-500">
+                The due-list batch needs the local server — it's offline (read-only mode).
               </p>
             ))}
 
