@@ -16,13 +16,13 @@ One SOQL query (owner id and window from `config/config.json` → `salesforce.bd
 
 ```
 SELECT Id, Subject, TaskSubtype, Type, Status, ActivityDate, CreatedDate,
-       CallDisposition, WhoId, Who.Name, AccountId, Account.Name
+       CallDisposition, WhoId, Who.Name, AccountId, Account.Name, Description
 FROM Task
 WHERE OwnerId = '<bdr_user_id>' AND CreatedDate = LAST_N_DAYS:<window_days>
 ORDER BY CreatedDate DESC LIMIT 2000
 ```
 
-Deliberately NO `Description` — subjects and metadata are enough for the mirror; message bodies stay in SF and are pulled per-account only when the drafting engine needs them. Large result sets get saved to a session tool-results file — process from there with jq, never Read the whole thing.
+`Description` carries the full message body for Groove-logged emails and InMails — the drafting engine grounds thread continuity on it (the server has no SF access, so bodies MUST live in the mirror). Store it per-touch truncated to `config.outreach.body_max_chars` (email + linkedin touches, both directions; null for calls/other or when SF has none). Store the raw text as-is — no HTML stripping, no summarizing. Large result sets get saved to a session tool-results file — process from there with jq, never Read the whole thing.
 
 Then fetch titles for the touched contacts (the tracker's persona matching needs them; Task rows don't carry titles): collect the distinct `WhoId`s that start with `003` (Contact records) and run `SELECT Id, Title FROM Contact WHERE Id IN (...)` in chunks of ≤ 400 ids. Missing/null titles are fine — record null.
 
@@ -61,7 +61,7 @@ Build and write `data/outreach.json` (temp file ending in `.json`, then move/cat
       "flow": "<latest flow name seen or null>", "flow_day": null,
       "outbound_count": 0, "connects": 0,
       "touches": [
-        {"at": "<ISO>", "channel": "email|linkedin|call|other", "direction": "out|in", "subject": "<raw subject>", "flow": null, "flow_day": null, "disposition": null}
+        {"at": "<ISO>", "channel": "email|linkedin|call|other", "direction": "out|in", "subject": "<raw subject>", "body": "<Description, first body_max_chars chars — email/linkedin only, else null>", "flow": null, "flow_day": null, "disposition": null}
       ],
       "upcoming": [
         {"at": "<ActivityDate>", "channel": "email|linkedin|call|other", "subject": "<raw subject>"}

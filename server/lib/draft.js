@@ -65,7 +65,12 @@ const NEXT_CONTRACT = `Return JSON:
   "subject": "<subject, or null for linkedin/call>",
   "body": "<the message (or call talking points if channel=call), plain text>"
 }
-Continue the thread: reference what was already sent (from the touch history) without repeating its proof point. If the contact replied, this is a reply-handling message, not a cold touch.`
+Continue the thread: reference what was already sent (from the touch history) without repeating its proof point. If the contact replied, this is a reply-handling message, not a cold touch.
+
+THREAD CONTINUITY — hard rules:
+- Read the BODIES of prior outbound touches in the history. The value thread they establish for this persona (e.g. "intent signal -> CRM -> scoring/routing" for RevOps) is THE thread. Your message deepens it with a NEW proof point or facet — it never re-pitches the same point and never pivots to a different value story mid-sequence. Two unrelated pitches in one thread read like two different vendors.
+- The angle must fit THIS contact's persona and what they own. An account-level play (e.g. AEO) only enters the thread if it can be expressed in this persona's terms; otherwise it belongs to a different contact at the account.
+- Pivot to a different play/angle ONLY when: the contact replied and steered elsewhere, or prior touch bodies are unavailable (subjects alone are not a thread). When you do pivot, say why in the rationale.`
 
 async function loadPlaysLibrary() {
   const dir = path.join(paths.dataDir, 'plays')

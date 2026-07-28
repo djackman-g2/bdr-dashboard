@@ -37,6 +37,7 @@
   "outreach": {
     "_comment": "Groove mirror. Groove is SF-native — its sends/calls land as Tasks owned by the BDR; the outreach mode reads that trail into data/outreach.json (free, SF-only). connect_dispositions are PREFIX matches against CallDisposition. sync_after_light: auto-queue a sync after every successful nightly/catch-up light run.",
     "window_days": 30,
+    "body_max_chars": 1200,
     "sync_after_light": true,
     "connect_dispositions": ["Connect", "Referred to another person", "Hung up"]
   },
