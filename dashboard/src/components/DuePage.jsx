@@ -6,6 +6,12 @@ import { CopyBtn } from './AccountsPage.jsx'
 // thread-aware next-step message per person (scripts/draft-due-csv.js);
 // results render here with copy buttons, grouped by account with the
 // account's flags on top. Results also live in data/drafts/due-<date>.{json,md}.
+//
+// Each card has a ✓ done button: it stamps sentAt in the day file (the card
+// drops into the collapsed "Done" section below, undo-able), logs the matching
+// tracker activity (email/call/linkedin — counts toward the day's tallies,
+// sets lastTouch), and the sent body becomes thread history for future drafts
+// to that person.
 
 function badge(text, tone) {
   const tones = {
@@ -18,12 +24,40 @@ function badge(text, tone) {
   )
 }
 
-function DraftCard({ r }) {
+function MarkBtn({ r, onMark, busy }) {
+  const done = Boolean(r.sentAt)
+  const label = done ? '↩ undo' : r.error ? '✓ done' : r.draft.channel === 'call' ? '✓ called' : '✓ sent'
   return (
-    <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+    <button
+      onClick={() => onMark(r, !done)}
+      disabled={busy}
+      title={done ? 'move back to the to-do list (removes the logged activity)' : 'mark done — hides the card and logs the activity'}
+      className={
+        done
+          ? 'shrink-0 rounded border border-zinc-300 px-2 py-0.5 text-[11px] text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800'
+          : 'shrink-0 rounded border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 dark:hover:bg-emerald-900/60'
+      }
+    >
+      {busy ? '…' : label}
+    </button>
+  )
+}
+
+function DraftCard({ r, onMark, busy }) {
+  const done = Boolean(r.sentAt)
+  return (
+    <div
+      className={`rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 ${done ? 'opacity-70' : ''}`}
+    >
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-semibold">{r.name}</span>
+        {done && <span className="text-xs text-zinc-500">@ {r.account}</span>}
         {r.step && <span className="text-xs text-zinc-500">{r.step}</span>}
+        {done && (
+          <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+            ✓ {new Date(r.sentAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+          </span>
+        )}
         <span className="grow" />
         {r.error ? badge('failed', 'error') : (
           <>
@@ -31,6 +65,7 @@ function DraftCard({ r }) {
             {badge(r.draft.channel, 'channel')}
           </>
         )}
+        {onMark && <MarkBtn r={r} onMark={onMark} busy={busy} />}
       </div>
       {r.error ? (
         <p className="mt-2 text-xs text-red-600 dark:text-red-400">
@@ -60,6 +95,7 @@ export default function DuePage() {
   const [status, setStatus] = useState(null)
   const [results, setResults] = useState(null)
   const [error, setError] = useState(null)
+  const [marking, setMarking] = useState(null) // draft key with a mark request in flight
   const fileRef = useRef(null)
 
   const poll = useCallback(async () => {
@@ -112,9 +148,35 @@ export default function DuePage() {
     poll()
   }
 
+  // Mark a draft done/undone: the server stamps the day file, logs (or
+  // removes) the tracker activity, and returns the updated file to render.
+  const mark = async (r, sent) => {
+    if (!results?.date) return
+    const key = r.contactId ?? r.name
+    setMarking(key)
+    setError(null)
+    try {
+      const res = await fetch('/api/draft-due/sent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: results.date, contactId: key, sent }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
+      setResults(json)
+    } catch (err) {
+      setError(err.message)
+    }
+    setMarking(null)
+  }
+
   const drafts = results?.drafts ?? []
+  const pending = drafts.filter((r) => !r.sentAt)
+  const done = drafts
+    .filter((r) => r.sentAt)
+    .sort((a, b) => (a.sentAt < b.sentAt ? 1 : -1))
   const byAccount = new Map()
-  for (const r of drafts) {
+  for (const r of pending) {
     if (!byAccount.has(r.account)) byAccount.set(r.account, [])
     byAccount.get(r.account).push(r)
   }
@@ -166,11 +228,17 @@ export default function DuePage() {
       {results ? (
         <>
           <p className="text-xs text-zinc-500">
-            {results.date === today ? 'Today' : results.date} · {drafts.filter((r) => r.draft).length} drafted
-            {drafts.some((r) => r.error) && ` · ${drafts.filter((r) => r.error).length} failed`} · from{' '}
+            {results.date === today ? 'Today' : results.date} · {pending.length} to do
+            {done.length > 0 && ` · ${done.length} done`}
+            {pending.some((r) => r.error) && ` · ${pending.filter((r) => r.error).length} failed`} · from{' '}
             {results.source}
             {results.date !== today && ' — stale: upload today’s export.'}
           </p>
+          {pending.length === 0 && done.length > 0 && (
+            <p className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-center text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+              ✓ All {done.length} done — nothing left from this list.
+            </p>
+          )}
           {[...byAccount].map(([account, list]) => {
             const flags = [...new Set(list.flatMap((r) => r.draft?.flag_warnings ?? []))]
             return (
@@ -187,11 +255,33 @@ export default function DuePage() {
                   </p>
                 ))}
                 {list.map((r) => (
-                  <DraftCard key={`${r.contactId}-${r.name}`} r={r} />
+                  <DraftCard
+                    key={`${r.contactId}-${r.name}`}
+                    r={r}
+                    onMark={mark}
+                    busy={marking === (r.contactId ?? r.name)}
+                  />
                 ))}
               </section>
             )
           })}
+          {done.length > 0 && (
+            <details className="pt-2">
+              <summary className="cursor-pointer text-sm font-bold text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
+                ✓ Done ({done.length}) — kept as reference for future drafts
+              </summary>
+              <div className="mt-2 space-y-2">
+                {done.map((r) => (
+                  <DraftCard
+                    key={`${r.contactId}-${r.name}`}
+                    r={r}
+                    onMark={mark}
+                    busy={marking === (r.contactId ?? r.name)}
+                  />
+                ))}
+              </div>
+            </details>
+          )}
         </>
       ) : (
         !status?.running && (

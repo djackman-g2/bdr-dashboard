@@ -109,6 +109,45 @@ async function loadMirrorEntry(contact) {
   }
 }
 
+// Messages marked "sent" on the Due page are real outbound touches the Groove
+// mirror won't show until the next outreach sync — scan the recent day files
+// so the next draft continues the thread instead of re-pitching what just
+// went out. Newest first, capped small (the prompt only needs the recent tail).
+async function loadDashboardSent(contactId, { files = 14, max = 6 } = {}) {
+  const dir = path.join(paths.dataDir, 'drafts')
+  let names
+  try {
+    names = (await fs.readdir(dir))
+      .filter((f) => /^due-\d{4}-\d{2}-\d{2}\.json$/.test(f))
+      .sort()
+      .reverse()
+      .slice(0, files)
+  } catch {
+    return []
+  }
+  const sent = []
+  for (const name of names) {
+    try {
+      const day = JSON.parse(await fs.readFile(path.join(dir, name), 'utf8'))
+      for (const e of day.drafts ?? []) {
+        if (e.contactId === contactId && e.sentAt && e.draft) {
+          sent.push({
+            sent_at: e.sentAt,
+            step: e.step ?? null,
+            play: e.draft.play ?? null,
+            channel: e.draft.channel ?? null,
+            subject: e.draft.subject ?? null,
+            body: (e.draft.body ?? '').slice(0, 700),
+          })
+        }
+      }
+    } catch {
+      /* unreadable day file — skip */
+    }
+  }
+  return sent.sort((a, b) => (a.sent_at < b.sent_at ? 1 : -1)).slice(0, max)
+}
+
 // Best-effort JSON extraction — models occasionally wrap in fences despite
 // instructions. Returns null when unparseable (caller falls back to raw text).
 function parseJson(text) {
@@ -143,10 +182,11 @@ export async function handleDraft(req, res) {
   if (!contact) return res.status(404).json({ error: 'no such contact' })
   const account = store.accounts.find((a) => a.id === contact.accountId) ?? null
 
-  const [plays, dossier, mirror] = await Promise.all([
+  const [plays, dossier, mirror, sentDrafts] = await Promise.all([
     loadPlaysLibrary(),
     loadDossier(contact.accountId),
     loadMirrorEntry(contact),
+    loadDashboardSent(contactId),
   ])
   if (!plays) return res.status(503).json({ error: 'plays library missing — expected data/plays/*.md' })
 
@@ -181,6 +221,9 @@ export async function handleDraft(req, res) {
     mirror
       ? `GROOVE TOUCH HISTORY (from Salesforce, newest first): ${JSON.stringify({ flow: mirror.flow, flow_day: mirror.flow_day, replied: mirror.replied, last_inbound: mirror.last_inbound, touches: mirror.touches.slice(0, 12) })}`
       : 'GROOVE TOUCH HISTORY: none on record — treat as a cold first touch.',
+    ...(sentDrafts.length
+      ? [`SENT FROM THIS DASHBOARD (Declan marked these sent on the Due page — real outbound touches to THIS contact that the Groove mirror may not show yet; newest first, treat as part of the thread and never repeat their proof points): ${JSON.stringify(sentDrafts)}`]
+      : []),
     dossier ? 'The account research dossier is provided in the system context.' : 'NO DOSSIER: this account is unresearched — play + persona + canonical stats only; no invented company facts.',
     kind === 'pack' ? PACK_CONTRACT : NEXT_CONTRACT,
   ].join('\n\n')

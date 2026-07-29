@@ -18,7 +18,7 @@ import {
 } from './lib/queue.js'
 import { handleChat } from './lib/chat.js'
 import { handleDraft } from './lib/draft.js'
-import { startDueBatch, dueBatchStatus } from './lib/dueBatch.js'
+import { startDueBatch, dueBatchStatus, markDueDraft } from './lib/dueBatch.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
 import { trackerRouter } from './lib/tracker.js'
 import { loadPlays, createPlay, KNOWN_TRIGGERS } from './lib/plays.js'
@@ -176,6 +176,27 @@ app.post('/api/draft-due', express.text({ type: '*/*', limit: '2mb' }), async (r
 })
 
 app.get('/api/draft-due', async (_req, res) => res.json(await dueBatchStatus()))
+
+// One-tap "sent" on a due draft: stamps sentAt in the day file (the Due page
+// hides done cards), logs the matching tracker activity, and the saved body
+// becomes thread history for future drafts to that person. sent:false undoes
+// both. Responds with the full updated day file so the page can re-render.
+app.post('/api/draft-due/sent', async (req, res) => {
+  const { date, contactId, sent } = req.body ?? {}
+  if (typeof contactId !== 'string' || !contactId) {
+    return res.status(400).json({ error: 'contactId is required' })
+  }
+  if (typeof sent !== 'boolean') {
+    return res.status(400).json({ error: 'sent must be a boolean' })
+  }
+  try {
+    res.json(await markDueDraft({ date, contactId, sent }))
+  } catch (err) {
+    if (err.code === 'bad-input') return res.status(400).json({ error: err.message })
+    if (err.code === 'not-found') return res.status(404).json({ error: err.message })
+    res.status(500).json({ error: err.message })
+  }
+})
 
 // 7G-1 — AI-visibility section update. Server-side completions (same client
 // as chat), ajv-validated atomic write; refreshed_at untouched. Also runs

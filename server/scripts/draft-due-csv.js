@@ -227,8 +227,16 @@ for (const { row, contact } of capped) {
 
 // ---------- write outputs (merge into the day file — partial re-runs keep the rest) ----------
 await fs.mkdir(outDir, { recursive: true })
+// Re-read the day file fresh: "sent" marks made from the Due page while this
+// batch ran must survive the write. Rows re-drafted this run start unsent.
+let fresh = prior
+try {
+  fresh = JSON.parse(await fs.readFile(jsonFile, 'utf8')).drafts ?? []
+} catch {
+  /* first run today */
+}
 const mergedMap = new Map()
-for (const e of prior) mergedMap.set(e.contactId ?? e.name, e)
+for (const e of fresh) mergedMap.set(e.contactId ?? e.name, e)
 for (const r of results) mergedMap.set(r.contactId ?? r.name, r)
 const merged = [...mergedMap.values()]
 
