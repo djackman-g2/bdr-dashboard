@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { TYPE_LABELS, OUTCOME_LABELS, goalState, pace, connectRate, patchTrackerContact, personaLabel } from '../lib/tracker.js'
+import { TYPE_LABELS, OUTCOME_LABELS, goalState, pace, connectRate, patchTrackerContact, watchTrackerContact, personaLabel } from '../lib/tracker.js'
 import { formatDate, relativeTime } from '../lib/format.js'
 
 const STATE_TEXT = {
@@ -159,6 +159,94 @@ function WatchRow({ c, o, accountName, busy, onPatch, targeted, onTarget }) {
   )
 }
 
+// Contact-first add: search everyone actually being touched — tracker rows
+// AND the full Groove mirror — and pin them from here, no account setup.
+// Mirror-only picks get their tracker account/contact rows created
+// server-side (POST /api/tracker/watch).
+function WatchSearch({ tracker, outreach, accountName, busy, onWatch }) {
+  const [q, setQ] = useState('')
+
+  const candidates = useMemo(() => {
+    const trackerRows = tracker.contacts
+      .filter((c) => !c.watch && c.name)
+      .map((c) => ({
+        key: c.id,
+        payload: { contactId: c.id },
+        name: c.name,
+        title: c.title,
+        account: accountName.get(c.accountId) ?? c.accountId,
+        source: 'tracker',
+      }))
+    // Mirror contacts that already have a tracker row show up as that row —
+    // only list the ones the working layer hasn't seen yet.
+    const seenSf = new Set(tracker.contacts.map((c) => c.sfContactId).filter(Boolean))
+    const seenName = new Set(tracker.contacts.filter((c) => c.name).map((c) => c.name.toLowerCase()))
+    const mirrorRows = (outreach?.contacts ?? [])
+      .filter((o) => o.sf_contact_id && !seenSf.has(o.sf_contact_id) && !(o.name && seenName.has(o.name.toLowerCase())))
+      .map((o) => ({
+        key: o.sf_contact_id,
+        payload: { sfContactId: o.sf_contact_id },
+        name: o.name,
+        title: o.title,
+        account: o.account_name,
+        source: o.flow ? `Groove · ${o.flow}` : 'Groove',
+      }))
+    return [...trackerRows, ...mirrorRows]
+  }, [tracker, outreach, accountName])
+
+  const needle = q.trim().toLowerCase()
+  const hits =
+    needle.length < 2
+      ? []
+      : candidates
+          .filter((c) => [c.name, c.account, c.title].filter(Boolean).some((s) => s.toLowerCase().includes(needle)))
+          .slice(0, 8)
+
+  const pick = (c) => {
+    onWatch(c.payload)
+    setQ('')
+  }
+
+  return (
+    <div className="relative mt-2">
+      <input
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && hits[0]) pick(hits[0])
+          if (e.key === 'Escape') setQ('')
+        }}
+        disabled={busy}
+        placeholder="add a contact — search by name, account, or title (tracker + Groove)"
+        aria-label="Search contacts to watch"
+        className="w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-primary-500 dark:border-zinc-700 dark:bg-zinc-950"
+      />
+      {hits.length > 0 && (
+        <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {hits.map((c) => (
+            <li key={c.key}>
+              <button
+                onClick={() => pick(c)}
+                disabled={busy}
+                className="flex w-full items-baseline gap-2 px-2 py-1.5 text-left text-sm hover:bg-zinc-50 disabled:opacity-50 dark:hover:bg-zinc-800/60"
+              >
+                <span className="font-medium">{c.name}</span>
+                <span className="truncate text-xs text-zinc-500">
+                  {[c.title, c.account].filter(Boolean).join(' · ')}
+                </span>
+                <span className="ml-auto shrink-0 text-[10px] text-zinc-400 uppercase">{c.source}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {needle.length >= 2 && hits.length === 0 && (
+        <p className="mt-1 text-xs text-zinc-500">No match in the tracker or Groove mirror — add them to Groove first, or add the row in Accounts.</p>
+      )}
+    </div>
+  )
+}
+
 // Full tracker view (#/activity): the watchlist mini-CRM (hand-picked
 // contacts, Groove-mirror state + dashboard-only notes) plus goals + pace,
 // connect rate, today's log with per-row undo, and the day-by-day trend.
@@ -193,6 +281,7 @@ export default function ActivityPage({ tracker, outreach, onUndo, busy, mutate, 
   const accountName = new Map(tracker.accounts.map((a) => [a.id, a.name]))
   const watched = tracker.contacts.filter((c) => c.watch)
   const onPatch = (id, patch) => mutate(patchTrackerContact(id, patch))
+  const onWatch = (payload) => mutate(watchTrackerContact(payload))
 
   const { goals, today, history } = tracker
   const counts = today.counts ?? {}
@@ -219,10 +308,12 @@ export default function ActivityPage({ tracker, outreach, onUndo, busy, mutate, 
             {outreach && ` (synced ${relativeTime(outreach.retrieved_at)})`}
           </span>
         </div>
+        <WatchSearch tracker={tracker} outreach={outreach} accountName={accountName} busy={busy} onWatch={onWatch} />
         {watched.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">
-            Nothing watched yet — hit ☆ on a contact row in <a href="#/accounts" className="text-primary-600 hover:underline dark:text-primary-400">Accounts</a> to
-            pin the people you really want to keep track of (out-of-flow moves, key threads).
+            Nothing watched yet — search above for anyone you've added to Groove or Salesforce (the ☆ on{' '}
+            <a href="#/accounts" className="text-primary-600 hover:underline dark:text-primary-400">Accounts</a> rows still works too) to pin the
+            people you're hitting out-of-flow or working strategically.
           </p>
         ) : (
           <div className="mt-2 overflow-x-auto">

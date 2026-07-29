@@ -284,6 +284,70 @@ export async function removeContact(id) {
   return removed
 }
 
+// ---------- Watchlist (contact-first add) ----------
+// The Activity page searches everyone Declan is actually touching — tracker
+// rows AND the whole Groove mirror — so the person being watched may not
+// have a tracker row (or even a tracker account) yet. Resolution mirrors
+// the due-CSV script: sfContactId → name-within-account; missing contact
+// rows are created with title/persona from the mirror, missing accounts get
+// the research-index slug when the name matches a dossier (so hook angles
+// and drafts keep working) or a slugified name otherwise.
+const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+
+const readJson = async (file) => JSON.parse(await fs.readFile(path.join(paths.dataDir, file), 'utf8'))
+
+export async function watchContact({ contactId, sfContactId }) {
+  if (contactId) {
+    const contact = await patchContact(contactId, { watch: true })
+    if (!contact) throw badInput(`no tracker contact "${contactId}"`)
+    return contact
+  }
+  if (!sfContactId) throw badInput('contactId or sfContactId is required')
+
+  let mirror
+  try {
+    mirror = await readJson('outreach.json')
+  } catch {
+    throw badInput('no Groove mirror (data/outreach.json) — run an outreach sync first')
+  }
+  const m = (mirror.contacts ?? []).find((c) => c.sf_contact_id === sfContactId)
+  if (!m) throw badInput(`contact ${sfContactId} is not in the Groove mirror`)
+
+  const store = await readStore()
+  const bySfId = store.contacts.find((c) => c.sfContactId === sfContactId)
+  if (bySfId) return patchContact(bySfId.id, { watch: true })
+
+  let accountId = (
+    store.accounts.find((a) => a.sfId && a.sfId === m.sf_account_id) ??
+    store.accounts.find((a) => m.account_name && a.name.toLowerCase() === m.account_name.toLowerCase())
+  )?.id
+  if (!accountId) {
+    let slug = null
+    try {
+      const index = await readJson('index.json')
+      slug = (index.accounts ?? []).find((a) => a.name?.toLowerCase() === m.account_name?.toLowerCase())?.slug ?? null
+    } catch {
+      /* no research index — fall through to slugified name */
+    }
+    accountId = slug ?? slugify(m.account_name ?? sfContactId)
+    await addAccount({ id: accountId, name: m.account_name ?? accountId, sfId: m.sf_account_id ?? null })
+  }
+
+  const byName = m.name
+    ? store.contacts.find((c) => c.accountId === accountId && c.name?.toLowerCase() === m.name.toLowerCase())
+    : null
+  if (byName) return patchContact(byName.id, { watch: true, sfContactId })
+
+  return addContact({
+    accountId,
+    name: m.name,
+    title: m.title,
+    persona: m.title ? personaForTitle(m.title) : null,
+    sfContactId,
+    watch: true,
+  })
+}
+
 // Everything the dashboard needs in one GET: goals + today's raw rows (small —
 // pace/connect-rate math stays client-side where "now" lives) + per-day
 // aggregates for the trend view.

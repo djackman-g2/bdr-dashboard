@@ -14,6 +14,7 @@ import {
   addContact,
   patchContact,
   removeContact,
+  watchContact,
 } from './trackerStore.js'
 import { hookAngles } from './plays.js'
 
@@ -62,6 +63,20 @@ trackerRouter.get('/hook-angles/:contactId', async (req, res) => {
     if (!contact) return res.status(404).json({ error: 'no such contact' })
     const account = store.accounts.find((a) => a.id === contact.accountId) ?? null
     res.json(await hookAngles(contact, account))
+  } catch (err) {
+    fail(res, err)
+  }
+})
+
+// Contact-first watchlist add (Activity page search): watch an existing
+// tracker contact by id, or pull a Groove-mirror contact in by sfContactId —
+// account + contact rows are created on the fly if this is the person's
+// first appearance in the working layer.
+trackerRouter.post('/watch', async (req, res) => {
+  const { contactId, sfContactId } = req.body ?? {}
+  try {
+    const contact = await watchContact({ contactId, sfContactId })
+    res.status(201).json(await withSummary({ contact }))
   } catch (err) {
     fail(res, err)
   }

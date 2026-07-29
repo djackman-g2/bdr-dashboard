@@ -66,6 +66,9 @@ export async function streamDraft(contactId, kind, { onDelta, onDone, onError, s
   }
 }
 export const patchTrackerContact = (id, patch) => api(`/api/tracker/contacts/${id}`, json('PATCH', patch))
+// Watchlist search-add: {contactId} for a tracker row, {sfContactId} for a
+// Groove-mirror contact (server creates the account/contact rows as needed).
+export const watchTrackerContact = (payload) => api('/api/tracker/watch', json('POST', payload))
 export const deleteTrackerContact = (id) => api(`/api/tracker/contacts/${id}`, { method: 'DELETE' })
 
 // Hook-angle offers (⚡ popover): plays whose triggers fire for this contact's
