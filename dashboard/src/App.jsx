@@ -415,7 +415,15 @@ export default function App() {
 
           {view === 'activity' &&
             (serverUp ? (
-              <ActivityPage tracker={tracker} onUndo={trackerUndo} busy={trackerBusy} />
+              <ActivityPage
+                tracker={tracker}
+                outreach={outreach}
+                onUndo={trackerUndo}
+                busy={trackerBusy}
+                mutate={trackerMutate}
+                targetId={targetId}
+                onTarget={onTarget}
+              />
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">
                 Activity tracking needs the local server — it's offline (read-only mode).

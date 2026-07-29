@@ -190,6 +190,10 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
   const hookMissing = !(c.hook ?? '').trim()
   const angle = c.persona ? personas[c.persona]?.hookAngle : null
   const overdue = c.nextDate && c.nextDate < new Date().toLocaleDateString('en-CA') && c.status !== 'dead'
+  // Flow-enrolled contacts: Groove owns the schedule. Next action/date render
+  // read-only (auto-stamped by the morning due-list upload) — manual entry is
+  // for out-of-flow contacts only, so the two can never drift.
+  const inFlow = o?.flow != null || o?.flow_day != null
 
   return (
     <tr
@@ -199,7 +203,7 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
           : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/40'
       }`}
     >
-      <td className="py-1 pr-1">
+      <td className="py-1 pr-1 whitespace-nowrap">
         <button
           onClick={() => onTarget(c.id)}
           disabled={busy}
@@ -208,6 +212,15 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
           className={targeted ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-300 hover:text-primary-500 dark:text-zinc-600'}
         >
           {targeted ? '◉' : '◎'}
+        </button>
+        <button
+          onClick={() => onPatch(c.id, { watch: !c.watch })}
+          disabled={busy}
+          title={c.watch ? 'On the watchlist (#/activity) — click to remove' : 'Watch — pin to the mini-CRM on #/activity'}
+          aria-label={c.watch ? 'Remove from watchlist' : 'Add to watchlist'}
+          className={`ml-0.5 ${c.watch ? 'text-warning-500' : 'text-zinc-300 hover:text-warning-500 dark:text-zinc-600'}`}
+        >
+          {c.watch ? '★' : '☆'}
         </button>
       </td>
       <td className="min-w-32 py-1 pr-2">
@@ -276,23 +289,41 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
         )}
       </td>
       <td className="min-w-28 py-1 pr-2">
-        <input
-          value={draft.nextAction}
-          onChange={set('nextAction')}
-          onBlur={save('nextAction')}
-          placeholder="next action"
-          aria-label="Next action"
-          className={inputCls}
-        />
+        {inFlow ? (
+          <span
+            className="block px-1 py-0.5 text-sm text-zinc-600 dark:text-zinc-400"
+            title={`Groove owns this schedule${o.flow ? ` (${o.flow})` : ''} — auto-stamped by the morning due-list upload`}
+          >
+            {c.nextAction ?? 'in flow'}
+          </span>
+        ) : (
+          <input
+            value={draft.nextAction}
+            onChange={set('nextAction')}
+            onBlur={save('nextAction')}
+            placeholder="next action"
+            aria-label="Next action"
+            className={inputCls}
+          />
+        )}
       </td>
-      <td className="py-1 pr-2">
-        <input
-          type="date"
-          value={c.nextDate ?? ''}
-          onChange={(e) => onPatch(c.id, { nextDate: e.target.value || null })}
-          aria-label="Next date"
-          className={`${selectCls} ${overdue ? 'border-brand-400 text-brand-600 dark:text-brand-300' : ''}`}
-        />
+      <td className="py-1 pr-2 whitespace-nowrap">
+        {inFlow ? (
+          <span
+            className={`px-1 py-0.5 text-xs tabular-nums ${overdue ? 'text-brand-600 dark:text-brand-300' : 'text-zinc-600 dark:text-zinc-400'}`}
+            title="Auto-stamped from the Groove due list"
+          >
+            {c.nextDate ?? '—'}
+          </span>
+        ) : (
+          <input
+            type="date"
+            value={c.nextDate ?? ''}
+            onChange={(e) => onPatch(c.id, { nextDate: e.target.value || null })}
+            aria-label="Next date"
+            className={`${selectCls} ${overdue ? 'border-brand-400 text-brand-600 dark:text-brand-300' : ''}`}
+          />
+        )}
       </td>
       <td className="min-w-48 py-1 pr-2">
         <div className="flex items-start gap-1">

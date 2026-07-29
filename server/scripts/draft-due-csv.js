@@ -10,7 +10,10 @@
 //
 // Per row: resolve the tracker contact (SFDC ID → email → name+account;
 // unknown contacts are created, with title/persona pulled from the Groove
-// mirror), then run /api/draft kind=next with the due step — the engine
+// mirror). Being on the due list IS the schedule, so each resolved row is
+// stamped nextAction = Current Step, nextDate = today — #/accounts and
+// #/day stay current with zero manual next-step upkeep. Then run
+// /api/draft kind=next with the due step — the engine
 // builds full context itself (dossier, persona profile, touch history /
 // last messages sent, account flags). Sequential, unattended; a failed row
 // is recorded and never blocks the rest.
@@ -64,6 +67,7 @@ async function apiCall(method, url, body) {
 }
 const addAccount = (a) => (useApi ? apiCall('POST', '/api/tracker/accounts', a) : store.addAccount(a))
 const addContact = (c) => (useApi ? apiCall('POST', '/api/tracker/contacts', c) : store.addContact(c))
+const patchContact = (id, p) => (useApi ? apiCall('PATCH', `/api/tracker/contacts/${id}`, p) : store.patchContact(id, p))
 
 // ---------- parse + resolve ----------
 const raw = await fs.readFile(file, 'utf8')
@@ -97,10 +101,15 @@ try {
 console.log(`${path.basename(file)}: ${rows.length} due` + (DRY ? ' [DRY RUN]' : '') + ` | writes: ${useApi ? 'server API' : 'direct'}`)
 
 const targets = [] // [{row, contact}]
+const today = new Date().toLocaleDateString('en-CA')
 let created = 0
+let stamped = 0
 for (const r of rows) {
   const sfId = r['SFDC ID'] || null
   const accountId = accountByName.get(r.Account.toLowerCase()) ?? null
+  // Due today = the schedule. Stamped on every resolved row (created or
+  // matched) so the Accounts/Day views track Groove without manual entry.
+  const due = { nextAction: r['Current Step'] || null, nextDate: today }
   let contact =
     (sfId && bySfId.get(sfId)) ||
     (r.Email && byEmail.get(r.Email.toLowerCase())) ||
@@ -121,14 +130,18 @@ for (const r of rows) {
       console.log(`  + contact ${r.Name} (${title ?? 'no title'}) → ${persona ?? 'no persona'}`)
       contact = { id: `(new)`, accountId: acctId, name: r.Name }
     } else {
-      const res = await addContact({ accountId: acctId, name: r.Name, title, email: r.Email || null, sfContactId: sfId, persona })
+      const res = await addContact({ accountId: acctId, name: r.Name, title, email: r.Email || null, sfContactId: sfId, persona, ...due })
       contact = res.contact ?? res
     }
     created++
+  } else if (!DRY && (contact.nextAction !== due.nextAction || contact.nextDate !== due.nextDate)) {
+    const res = await patchContact(contact.id, due)
+    contact = res?.contact ?? res ?? contact
+    stamped++
   }
   targets.push({ row: r, contact })
 }
-console.log(`resolved: ${targets.length - created} matched, ${created} created`)
+console.log(`resolved: ${targets.length - created} matched, ${created} created` + (DRY ? '' : ` · next step/date stamped on ${stamped + created}`))
 
 if (DRY) {
   for (const { row, contact } of targets) {

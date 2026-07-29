@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { TYPE_LABELS, OUTCOME_LABELS, goalState, pace, connectRate } from '../lib/tracker.js'
-import { formatDate } from '../lib/format.js'
+import { useEffect, useMemo, useState } from 'react'
+import { TYPE_LABELS, OUTCOME_LABELS, goalState, pace, connectRate, patchTrackerContact, personaLabel } from '../lib/tracker.js'
+import { formatDate, relativeTime } from '../lib/format.js'
 
 const STATE_TEXT = {
   stretch: 'text-primary-700 dark:text-primary-300',
@@ -47,9 +47,124 @@ function GoalCard({ type, count, goal, now }) {
   )
 }
 
-// Full tracker view (#/activity): goals + pace, connect rate, today's log
-// with per-row undo, and the day-by-day trend.
-export default function ActivityPage({ tracker, onUndo, busy }) {
+const watchInputCls =
+  'w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-sm outline-none hover:border-zinc-300 focus:border-primary-500 focus:bg-white dark:hover:border-zinc-700 dark:focus:bg-zinc-950'
+
+// One watchlist row — a hand-picked contact worth tracking closely (usually
+// out-of-flow or high-stakes). Flow state / last touch / replied come from
+// the Groove mirror; next move + notes are the dashboard-only fields.
+function WatchRow({ c, o, accountName, busy, onPatch, targeted, onTarget }) {
+  const [draft, setDraft] = useState({ nextAction: c.nextAction ?? '', notes: c.notes ?? '' })
+  const set = (k) => (e) => setDraft((d) => ({ ...d, [k]: e.target.value }))
+  const save = (k) => () => {
+    const v = draft[k].trim()
+    if (v === (c[k] ?? '')) return
+    onPatch(c.id, { [k]: v || null })
+  }
+  const inFlow = o?.flow != null || o?.flow_day != null
+  const lastTouch = [c.lastTouch, o?.last_outbound].filter(Boolean).sort().pop()
+  const overdue = c.nextDate && c.nextDate < new Date().toLocaleDateString('en-CA') && c.status !== 'dead'
+
+  return (
+    <tr className="border-t border-zinc-100 align-top hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/40">
+      <td className="py-1 pr-1">
+        <button
+          onClick={() => onTarget(c.id)}
+          disabled={busy}
+          title={targeted ? 'Activity target — long-press a bar button to log to this contact' : 'Set as activity target'}
+          aria-label={targeted ? 'Clear activity target' : 'Set as activity target'}
+          className={targeted ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-300 hover:text-primary-500 dark:text-zinc-600'}
+        >
+          {targeted ? '◉' : '◎'}
+        </button>
+      </td>
+      <td className="min-w-32 py-1 pr-2">
+        <span className="text-sm font-medium">{c.name ?? 'unnamed'}</span>
+        <div className="text-[11px] text-zinc-500">
+          {accountName}
+          {c.persona ? ` · ${personaLabel(c.persona)}` : ''}
+        </div>
+      </td>
+      <td className="py-1 pr-2 text-xs whitespace-nowrap">
+        {inFlow ? (
+          <span className="text-primary-600 dark:text-primary-400" title={o.flow ?? 'Groove flow'}>
+            in flow{o.flow_day != null ? ` · day ${o.flow_day}` : ''}
+          </span>
+        ) : (
+          <span className="text-zinc-400">out of flow</span>
+        )}
+        {o?.replied && (
+          <div className="mt-0.5 inline-block rounded-full border border-success-400 bg-success-100 px-1.5 text-[10px] text-success-700 dark:border-success-700 dark:bg-success-900/50 dark:text-success-300">
+            ✉ replied
+          </div>
+        )}
+      </td>
+      <td className="py-1 pr-2 text-xs whitespace-nowrap text-zinc-500">{lastTouch ? relativeTime(lastTouch) : '—'}</td>
+      <td className="min-w-32 py-1 pr-2">
+        {inFlow ? (
+          <span
+            className="block px-1 py-0.5 text-sm text-zinc-600 dark:text-zinc-400"
+            title={`Groove owns this schedule${o.flow ? ` (${o.flow})` : ''} — auto-stamped by the due-list upload`}
+          >
+            {c.nextAction ?? 'in flow'}
+          </span>
+        ) : (
+          <input
+            value={draft.nextAction}
+            onChange={set('nextAction')}
+            onBlur={save('nextAction')}
+            placeholder="next move"
+            aria-label="Next move"
+            className={watchInputCls}
+          />
+        )}
+      </td>
+      <td className="py-1 pr-2 whitespace-nowrap">
+        {inFlow ? (
+          <span className={`text-xs tabular-nums ${overdue ? 'text-brand-600 dark:text-brand-300' : 'text-zinc-500'}`}>{c.nextDate ?? '—'}</span>
+        ) : (
+          <input
+            type="date"
+            value={c.nextDate ?? ''}
+            onChange={(e) => onPatch(c.id, { nextDate: e.target.value || null })}
+            aria-label="Next date"
+            className={`rounded border border-zinc-300 bg-white px-1 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-950 ${
+              overdue ? 'border-brand-400 text-brand-600 dark:text-brand-300' : ''
+            }`}
+          />
+        )}
+      </td>
+      <td className="min-w-48 py-1 pr-2">
+        <input
+          value={draft.notes}
+          onChange={set('notes')}
+          onBlur={save('notes')}
+          placeholder="notes — context Groove doesn't hold"
+          aria-label="Notes"
+          className={watchInputCls}
+        />
+      </td>
+      <td className="py-1 text-right whitespace-nowrap">
+        <button
+          onClick={() => onPatch(c.id, { watch: false })}
+          disabled={busy}
+          title="Remove from watchlist (contact row stays in Accounts)"
+          aria-label="Remove from watchlist"
+          className="text-warning-500 hover:text-zinc-400"
+        >
+          ★
+        </button>
+      </td>
+    </tr>
+  )
+}
+
+// Full tracker view (#/activity): the watchlist mini-CRM (hand-picked
+// contacts, Groove-mirror state + dashboard-only notes) plus goals + pace,
+// connect rate, today's log with per-row undo, and the day-by-day trend.
+// Activity itself is tracked in Groove — the manual tallies here are just
+// the quick pace counter fed by the bottom bar.
+export default function ActivityPage({ tracker, outreach, onUndo, busy, mutate, targetId, onTarget }) {
   // Re-render every minute so the pace math tracks the clock.
   const [now, setNow] = useState(() => new Date())
   useEffect(() => {
@@ -57,7 +172,27 @@ export default function ActivityPage({ tracker, onUndo, busy }) {
     return () => clearInterval(t)
   }, [])
 
+  // Groove-mirror lookup (same rule as Accounts: sfContactId authoritative,
+  // bare name as fallback for rows created before the id existed).
+  const outreachLookup = useMemo(() => {
+    const byId = new Map()
+    const byName = new Map()
+    for (const o of outreach?.contacts ?? []) {
+      if (o.sf_contact_id) byId.set(o.sf_contact_id, o)
+      if (o.name) byName.set(o.name.toLowerCase(), o)
+    }
+    return { byId, byName }
+  }, [outreach])
+
   if (!tracker) return <p className="mt-10 text-center text-sm text-zinc-500">Loading tracker…</p>
+
+  const matchOutreach = (c) =>
+    (c.sfContactId && outreachLookup.byId.get(c.sfContactId)) ||
+    (c.name && outreachLookup.byName.get(c.name.toLowerCase())) ||
+    null
+  const accountName = new Map(tracker.accounts.map((a) => [a.id, a.name]))
+  const watched = tracker.contacts.filter((c) => c.watch)
+  const onPatch = (id, patch) => mutate(patchTrackerContact(id, patch))
 
   const { goals, today, history } = tracker
   const counts = today.counts ?? {}
@@ -72,8 +207,56 @@ export default function ActivityPage({ tracker, onUndo, busy }) {
     <div className="mx-auto max-w-3xl">
       <h1 className="text-xl font-bold tracking-tight">Activity</h1>
       <p className="mt-1 text-sm text-zinc-500">
-        {formatDate(today.date)} · counts reset at midnight · log from the bar below on any page
+        {formatDate(today.date)} · Groove is the activity system-of-record — this page is your watchlist + a quick pace counter (log from
+        the bar below on any page)
       </p>
+
+      <section className="mt-4 rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="flex items-baseline gap-2">
+          <h2 className="text-sm font-semibold tracking-wide text-zinc-500 uppercase">Watchlist</h2>
+          <span className="text-xs text-zinc-500">
+            hand-picked contacts · flow state + replies from the Groove mirror
+            {outreach && ` (synced ${relativeTime(outreach.retrieved_at)})`}
+          </span>
+        </div>
+        {watched.length === 0 ? (
+          <p className="mt-2 text-sm text-zinc-500">
+            Nothing watched yet — hit ☆ on a contact row in <a href="#/accounts" className="text-primary-600 hover:underline dark:text-primary-400">Accounts</a> to
+            pin the people you really want to keep track of (out-of-flow moves, key threads).
+          </p>
+        ) : (
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[52rem] text-sm">
+              <thead>
+                <tr className="text-left text-xs text-zinc-500">
+                  <th className="py-1 pr-1 font-normal" aria-label="Target"></th>
+                  <th className="py-1 pr-2 font-normal">Contact</th>
+                  <th className="py-1 pr-2 font-normal">Groove</th>
+                  <th className="py-1 pr-2 font-normal">Last touch</th>
+                  <th className="py-1 pr-2 font-normal">Next move</th>
+                  <th className="py-1 pr-2 font-normal">Date</th>
+                  <th className="py-1 pr-2 font-normal">Notes</th>
+                  <th className="py-1 font-normal" aria-label="Unwatch"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {watched.map((c) => (
+                  <WatchRow
+                    key={c.id}
+                    c={c}
+                    o={matchOutreach(c)}
+                    accountName={accountName.get(c.accountId) ?? c.accountId}
+                    busy={busy}
+                    onPatch={onPatch}
+                    targeted={c.id === targetId}
+                    onTarget={onTarget}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {goalTypes.map((type) => (

@@ -8,7 +8,9 @@
 // Collections:
 //   activities[]: { id, ts, type, contactId?, outcome? }
 //   contacts[]:   { id, name?, title?, accountId, persona, step, lastTouch,
-//                   nextAction, nextDate, hook, status }   (Module 2)
+//                   nextAction, nextDate, hook, status, watch, notes }   (Module 2)
+//   watch/notes power the #/activity watchlist (mini-CRM for hand-picked
+//   contacts — out-of-flow moves and anything Groove doesn't hold).
 //   accounts[]:   { id, name, g2Slug?, sfId?, threadIds[], playType, flags[] } (Module 2)
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -223,7 +225,7 @@ function validateContactFields(patch, { forStep, forHook }) {
   }
 }
 
-export async function addContact({ accountId, persona, name, title, hook, nextAction, nextDate, status, sfContactId, email }) {
+export async function addContact({ accountId, persona, name, title, hook, nextAction, nextDate, status, sfContactId, email, watch, notes }) {
   if (!accountId || typeof accountId !== 'string') throw badInput('accountId is required')
   const contact = {
     id: randomUUID(),
@@ -239,6 +241,8 @@ export async function addContact({ accountId, persona, name, title, hook, nextAc
     nextDate: nextDate || null,
     hook: hook?.trim() || '',
     status: status ?? (name?.trim() ? 'active' : 'to-find'),
+    watch: Boolean(watch),
+    notes: notes?.trim() || null,
   }
   validateContactFields(contact, { forStep: contact.step, forHook: contact.hook })
   await updateStore((store) => {
@@ -251,7 +255,7 @@ export async function addContact({ accountId, persona, name, title, hook, nextAc
 }
 
 export async function patchContact(id, patch) {
-  const allowed = ['name', 'title', 'persona', 'step', 'hook', 'nextAction', 'nextDate', 'status', 'lastTouch', 'sfContactId', 'email']
+  const allowed = ['name', 'title', 'persona', 'step', 'hook', 'nextAction', 'nextDate', 'status', 'lastTouch', 'sfContactId', 'email', 'watch', 'notes']
   const clean = Object.fromEntries(Object.entries(patch ?? {}).filter(([k]) => allowed.includes(k)))
   let contact = null
   await updateStore((store) => {
@@ -263,6 +267,8 @@ export async function patchContact(id, patch) {
     })
     // Naming a to-find row makes it a live target unless the patch says otherwise.
     if (clean.name && contact.status === 'to-find' && clean.status === undefined) clean.status = 'active'
+    if ('watch' in clean) clean.watch = Boolean(clean.watch)
+    if ('notes' in clean) clean.notes = (typeof clean.notes === 'string' && clean.notes.trim()) || null
     Object.assign(contact, clean)
     if (contact.hook == null) contact.hook = ''
   })
