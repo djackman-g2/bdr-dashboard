@@ -151,6 +151,11 @@ async function processNext() {
   child.stdout.pipe(log, { end: false })
   child.stderr.pipe(log, { end: false })
 
+  // Hold off idle sleep while a run is in flight — a run suspended mid-sleep
+  // blows past its wall-clock timeout on wake. (A closed lid still sleeps;
+  // caffeinate exits on its own when the watched pid does.)
+  spawn('caffeinate', ['-is', '-w', String(child.pid)], { stdio: 'ignore' }).on('error', () => {})
+
   const timeoutMin =
     config.refresh.job_timeout_minutes?.[job.mode] ?? (job.mode === 'light' ? 90 : 45)
   const timer = setTimeout(() => {
@@ -190,13 +195,22 @@ async function finishJob(job, result) {
   const logFile = running?.logFile ?? null
   running = null
 
+  // A pipeline can abort loudly ("FATAL: ..." in its own run entry) yet still
+  // exit 0. These timestamps gate the hourly catch-up, so a FATAL run must not
+  // advance them — otherwise a failed nightly buys itself a
+  // catchup_after_hours snooze. Non-FATAL errors (per-account hiccups) still
+  // count as success: treating them as failures would re-run a ~90-minute
+  // pipeline every hour over one flaky fetch.
+  let fatal = null
   await updateMeta((m) => {
     m.job_queue = (m.job_queue ?? []).filter((j) => j.id !== job.id)
-    if (result.ok) {
+    const entry = (m.runs ?? []).find((r) => r.id === job.id)
+    fatal = (entry?.errors ?? []).find((e) => typeof e === 'string' && e.startsWith('FATAL')) ?? null
+    if (result.ok && !fatal) {
       if (job.mode === 'light') m.last_light_refresh_at = finished_at
       else if (job.mode === 'deep') m.last_deep_refresh_at = finished_at
       else if (job.mode === 'outreach') m.last_outreach_sync_at = finished_at
-    } else {
+    } else if (!result.ok) {
       // The pipeline logs its own runs; when a job dies before it can, the
       // failure must still be loud in the run log — never a silent no-op.
       m.runs = [
@@ -216,11 +230,14 @@ async function finishJob(job, result) {
     }
   })
 
+  const ok = result.ok && !fatal
+  const error = result.error ?? fatal
+
   // 7G-1: every successful deep refresh gets a fresh ai_visibility section —
   // cheap (2-3 small completions via the chat proxy), runs in the job's queue
   // slot before the next job starts. Failure is loud in the run entry but
   // never fails the deep run itself.
-  if (result.ok && job.mode === 'deep' && config.ai_visibility?.run_after_deep !== false) {
+  if (ok && job.mode === 'deep' && config.ai_visibility?.run_after_deep !== false) {
     const note = await autoAiVisibility(job)
     if (note) {
       await updateMeta((m) => {
@@ -232,20 +249,20 @@ async function finishJob(job, result) {
 
   // Groove mirror: the nightly light run means the book is fresh — follow it
   // with an outreach sync so the tracker's flow positions are fresh too.
-  if (result.ok && job.mode === 'light' && job.query === 'ALL' && config.outreach?.sync_after_light !== false) {
+  if (ok && job.mode === 'light' && job.query === 'ALL' && config.outreach?.sync_after_light !== false) {
     enqueue({ query: 'ALL', mode: 'outreach', trigger: 'after-light', origin: 'auto' }).then((r) => {
       if (r.error && r.error !== 'duplicate') console.error(`[outreach] auto-sync not queued: ${r.error}`)
     })
   }
 
-  emit(result.ok ? 'finished' : 'failed', job, {
-    error: result.error ?? null,
+  emit(ok ? 'finished' : 'failed', job, {
+    error: error ?? null,
     finished_at,
   })
-  fireWebhook(result.ok ? 'run_finished' : 'run_failed', {
+  fireWebhook(ok ? 'run_finished' : 'run_failed', {
     job: publicJob(job),
-    ok: result.ok,
-    error: result.error ?? null,
+    ok,
+    error: error ?? null,
     finished_at,
     log_file: logFile ? path.relative(paths.root, logFile) : null,
   })

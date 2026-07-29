@@ -26,7 +26,7 @@
     "notes": "FY27 universe (verified 289 accounts, 2026-07-21): BDR__c lookup, NOT OwnerId (returns 0) — plus AE-owner, prospect-type, and ultimate-parent filters. Non-ultimate-parent children and other-AE accounts (~163 pending reassignment) are excluded BY DESIGN; if the book shifts again, this WHERE clause is the single thing to edit. LastActivityDate contains future dates (2029-2036) — filter out any date > today before using for recency. 6sense/hierarchy fields feed nightly ranking only; 6sense values must NEVER appear in outreach copy."
   },
   "refresh": {
-    "nightly_light_cron": "30 5 * * *",
+    "nightly_light_cron": "15 8 * * *",
     "queue_concurrency": 1,
     "deep_refresh_daily_cap": 10,
     "playwright_in_scheduled_runs": false,
