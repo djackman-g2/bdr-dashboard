@@ -7,6 +7,9 @@ import {
   patchTrackerContact,
   deleteTrackerContact,
   streamDraft,
+  fetchHookAngles,
+  fetchPlays,
+  createPlay,
   personaForTitle,
   personaLabel,
 } from '../lib/tracker.js'
@@ -156,6 +159,205 @@ function DraftPanel({ contact, accountName, onClose }) {
   )
 }
 
+// "+ new play" — a play is just a .md in data/plays/ with frontmatter; this
+// form writes one via POST /api/plays and it's instantly matchable (⚡) and
+// draftable (✍). trigger: persona = a plain reusable hook angle.
+function NewPlayForm({ personaKeys, onCreated, onCancel }) {
+  const [form, setForm] = useState({ name: '', trigger: 'persona', personas: ['any'], hook: '', notes: '' })
+  const [triggers, setTriggers] = useState(['persona', 'ai_visibility', 'closed_lost', 'no_history', 'mid_flow', 'manual'])
+  const [state, setState] = useState({ status: 'idle' })
+
+  useEffect(() => {
+    fetchPlays().then((r) => r.triggers?.length && setTriggers(r.triggers)).catch(() => {})
+  }, [])
+
+  const togglePersona = (key) =>
+    setForm((f) => {
+      if (key === 'any') return { ...f, personas: ['any'] }
+      const rest = f.personas.filter((p) => p !== 'any')
+      const next = rest.includes(key) ? rest.filter((p) => p !== key) : [...rest, key]
+      return { ...f, personas: next.length ? next : ['any'] }
+    })
+
+  const submit = async () => {
+    setState({ status: 'saving' })
+    try {
+      const created = await createPlay(form)
+      setState({ status: 'idle' })
+      onCreated(created)
+    } catch (e) {
+      setState({ status: 'error', error: e.message })
+    }
+  }
+
+  const fieldCls =
+    'w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm outline-none focus:border-primary-500 dark:border-zinc-700 dark:bg-zinc-950'
+  return (
+    <div className="mt-3 space-y-2 rounded border border-zinc-200 p-3 dark:border-zinc-800">
+      <p className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">New play</p>
+      <input
+        value={form.name}
+        onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+        placeholder="play name (becomes data/plays/{slug}.md)"
+        aria-label="Play name"
+        className={fieldCls}
+      />
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <label className="text-zinc-500">
+          fires on{' '}
+          <select
+            value={form.trigger}
+            onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}
+            aria-label="Trigger"
+            className={selectCls}
+          >
+            {triggers.map((t) => (
+              <option key={t} value={t}>
+                {t === 'persona' ? 'persona match (always offered)' : t === 'manual' ? 'manual (never auto-fires)' : t.replace(/_/g, ' ')}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="text-zinc-400">·</span>
+        {['any', ...personaKeys].map((k) => (
+          <label key={k} className="flex items-center gap-1 text-zinc-600 dark:text-zinc-400">
+            <input type="checkbox" checked={form.personas.includes(k)} onChange={() => togglePersona(k)} />
+            {k === 'any' ? 'any persona' : personaLabel(k)}
+          </label>
+        ))}
+      </div>
+      <textarea
+        value={form.hook}
+        onChange={(e) => setForm((f) => ({ ...f, hook: e.target.value }))}
+        placeholder="hook template — one line, e.g. Companies comparing {category|your category} on G2 resolve to named accounts…"
+        aria-label="Hook template"
+        rows={2}
+        className={fieldCls}
+      />
+      <p className="text-[10px] text-zinc-400">
+        Tokens fill from the dossier: {'{company} {name} {category} {review_count} {competitor_count} {ai_question} {profile_url} {review_line} {recent_reviews_line}'} — use {'{token|fallback}'} to degrade gracefully.
+      </p>
+      <textarea
+        value={form.notes}
+        onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+        placeholder="notes for the draft engine (optional): angle, structure, proof to pull…"
+        aria-label="Play notes"
+        rows={3}
+        className={fieldCls}
+      />
+      {state.status === 'error' && <p className="text-xs text-brand-600 dark:text-brand-300">{state.error}</p>}
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="rounded border border-zinc-300 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-700 dark:text-zinc-400">
+          cancel
+        </button>
+        <button
+          onClick={submit}
+          disabled={state.status === 'saving'}
+          className="rounded border border-primary-400 bg-primary-100 px-2 py-0.5 text-xs text-primary-700 disabled:opacity-50 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300"
+        >
+          {state.status === 'saving' ? 'saving…' : 'create play'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ⚡ hook angles — play-aware replacement for the old one-angle paste. Offers
+// come from the server's matcher: every play whose trigger fires for this
+// account, hook pre-filled with real dossier facts (no LLM call — instant,
+// never invents a number). Picking one seeds the hook field; it's a starting
+// line to edit, not sent copy. The generic persona angle stays at the bottom.
+function HookAnglesModal({ contact, accountName, personaKeys, onPick, onClose }) {
+  const [state, setState] = useState({ status: 'loading' })
+  const [creating, setCreating] = useState(false)
+
+  const load = () => {
+    setState({ status: 'loading' })
+    fetchHookAngles(contact.id)
+      .then((r) => setState({ status: 'done', ...r }))
+      .catch((e) => setState({ status: 'error', error: e.message }))
+  }
+  useEffect(load, [contact.id])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 sm:p-8" onClick={onClose}>
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-full w-full max-w-xl overflow-y-auto rounded-lg border border-zinc-200 bg-white p-4 shadow-xl dark:border-zinc-700 dark:bg-zinc-900"
+      >
+        <div className="flex items-center gap-2">
+          <h2 className="font-semibold">
+            ⚡ hook angles{' '}
+            <span className="text-sm font-normal text-zinc-500">
+              · {contact.name ?? 'unnamed contact'} · {accountName}
+            </span>
+          </h2>
+          <button onClick={onClose} aria-label="Close" className="ml-auto text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
+            ✕
+          </button>
+        </div>
+
+        {state.status === 'loading' && <p className="mt-4 animate-pulse text-sm text-zinc-500 motion-reduce:animate-none">Matching plays against the dossier…</p>}
+        {state.status === 'error' && (
+          <p className="mt-4 rounded-lg border border-brand-300 bg-brand-50 p-3 text-sm text-brand-700 dark:border-brand-900 dark:bg-brand-950/60 dark:text-brand-300">
+            {state.error}
+          </p>
+        )}
+
+        {state.status === 'done' && (
+          <>
+            {!state.dossier && (
+              <p className="mt-2 text-xs text-warning-700 dark:text-warning-400">
+                No research dossier yet — only persona/history angles available. Run a refresh for fact-filled hooks.
+              </p>
+            )}
+            <ul className="mt-3 space-y-2">
+              {state.offers.map((o, i) => (
+                <li key={i}>
+                  <button
+                    onClick={() => {
+                      onPick(o.hook)
+                      onClose()
+                    }}
+                    className="w-full rounded border border-zinc-200 p-2 text-left hover:border-primary-400 hover:bg-primary-50 dark:border-zinc-800 dark:hover:border-primary-600 dark:hover:bg-primary-950/30"
+                  >
+                    <span className="rounded-full border border-primary-300 px-2 py-0.5 text-[10px] text-primary-700 dark:border-primary-700 dark:text-primary-300">
+                      {o.label}
+                    </span>
+                    <p className="mt-1 text-sm">{o.hook}</p>
+                    <p className="mt-0.5 text-[10px] text-zinc-400">{o.why}</p>
+                  </button>
+                </li>
+              ))}
+              {state.offers.length === 0 && (
+                <li className="text-sm text-zinc-500">No plays fire for this contact — set a persona, or write the hook by hand.</li>
+              )}
+            </ul>
+          </>
+        )}
+
+        {creating ? (
+          <NewPlayForm
+            personaKeys={personaKeys}
+            onCreated={() => {
+              setCreating(false)
+              load()
+            }}
+            onCancel={() => setCreating(false)}
+          />
+        ) : (
+          <button
+            onClick={() => setCreating(true)}
+            className="mt-3 text-xs text-primary-600 hover:underline dark:text-primary-400"
+          >
+            + new play — reusable angle, instantly available here and to ✍ draft
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const STATUS_TONE = {
   'to-find': 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400',
   active: 'bg-info-100 text-info-700 dark:bg-info-950/60 dark:text-info-300',
@@ -174,7 +376,8 @@ const selectCls =
 // no hook, no advance (the server enforces it too).
 // Groove-mirror data for this contact (matched by sfContactId, name fallback).
 // lastTouch and flow position come from the SF task trail — no manual entry.
-function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targeted, onTarget, onDraft }) {
+function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targeted, onTarget, onDraft, accountName }) {
+  const [anglesOpen, setAnglesOpen] = useState(false)
   const [draft, setDraft] = useState({
     name: c.name ?? '',
     title: c.title ?? '',
@@ -335,20 +538,29 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
             aria-label="Hook"
             className={`${inputCls} ${hookMissing ? 'placeholder:text-brand-400/70' : ''}`}
           />
-          {angle && hookMissing && (
+          {hookMissing && (
             <button
-              onClick={() => {
-                setDraft((d) => ({ ...d, hook: angle }))
-                onPatch(c.id, { hook: angle })
-              }}
+              onClick={() => setAnglesOpen(true)}
               disabled={busy}
-              title={`Start from the ${personaLabel(c.persona)} angle — then personalize with pulled proof`}
+              title="Pick a hook from the plays that fire for this account (fact-filled from the dossier)"
               className="mt-0.5 shrink-0 text-xs text-primary-600 hover:underline dark:text-primary-400"
             >
-              ⚡use angle
+              ⚡angles
             </button>
           )}
         </div>
+        {anglesOpen && (
+          <HookAnglesModal
+            contact={c}
+            accountName={accountName}
+            personaKeys={Object.keys(personas)}
+            onPick={(hook) => {
+              setDraft((d) => ({ ...d, hook }))
+              onPatch(c.id, { hook })
+            }}
+            onClose={() => setAnglesOpen(false)}
+          />
+        )}
       </td>
       <td className="py-1 pr-2">
         <select
@@ -621,6 +833,7 @@ function AccountCard({ account, contacts, tracker, index, outreach, busy, mutate
                   targeted={c.id === targetId}
                   onTarget={onTarget}
                   onDraft={onDraft}
+                  accountName={account.name}
                 />
               ))}
             </tbody>

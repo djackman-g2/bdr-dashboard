@@ -68,6 +68,13 @@ export async function streamDraft(contactId, kind, { onDelta, onDone, onError, s
 export const patchTrackerContact = (id, patch) => api(`/api/tracker/contacts/${id}`, json('PATCH', patch))
 export const deleteTrackerContact = (id) => api(`/api/tracker/contacts/${id}`, { method: 'DELETE' })
 
+// Hook-angle offers (⚡ popover): plays whose triggers fire for this contact's
+// account, hook templates pre-filled with real dossier facts. Instant, no LLM.
+export const fetchHookAngles = (contactId) => api(`/api/tracker/hook-angles/${contactId}`)
+export const fetchPlays = () => api('/api/plays')
+// New play = new data/plays/{slug}.md — instantly matchable AND draftable.
+export const createPlay = (play) => api('/api/plays', json('POST', play))
+
 // Client-side persona guess (import buttons) — mirrors the server's matcher:
 // specific personas before `marketing` (its titles include "Product
 // Marketing"), short tokens whole-word only ("GM" must not match "segment").

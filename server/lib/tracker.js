@@ -15,6 +15,7 @@ import {
   patchContact,
   removeContact,
 } from './trackerStore.js'
+import { hookAngles } from './plays.js'
 
 export const trackerRouter = express.Router()
 
@@ -46,6 +47,21 @@ trackerRouter.delete('/activity/:id', async (req, res) => {
     const removed = await undoActivity(req.params.id)
     if (!removed) return res.status(404).json({ error: 'no such activity' })
     res.json(await withSummary({ removed }))
+  } catch (err) {
+    fail(res, err)
+  }
+})
+
+// Hook-angle offers for one contact (the ⚡ popover): plays whose triggers
+// fire for this account, hook templates filled with real dossier facts.
+// Read-only and instant — no LLM call, no paid tools.
+trackerRouter.get('/hook-angles/:contactId', async (req, res) => {
+  try {
+    const store = await readStore()
+    const contact = store.contacts.find((c) => c.id === req.params.contactId)
+    if (!contact) return res.status(404).json({ error: 'no such contact' })
+    const account = store.accounts.find((a) => a.id === contact.accountId) ?? null
+    res.json(await hookAngles(contact, account))
   } catch (err) {
     fail(res, err)
   }

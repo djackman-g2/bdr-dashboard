@@ -21,6 +21,7 @@ import { handleDraft } from './lib/draft.js'
 import { startDueBatch, dueBatchStatus } from './lib/dueBatch.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
 import { trackerRouter } from './lib/tracker.js'
+import { loadPlays, createPlay, KNOWN_TRIGGERS } from './lib/plays.js'
 
 fs.mkdirSync(paths.logsDir, { recursive: true })
 
@@ -126,6 +127,21 @@ app.post('/api/refresh', async (req, res) => {
 // Outreach tracker (activity logging + contact/account working layer).
 // Manual logging only — Groove has no API. Writes data/tracker.json.
 app.use('/api/tracker', trackerRouter)
+
+// Plays library — list the frontmattered (matchable) plays, and create a new
+// one from the dashboard's "+ new play" modal. A play is just a .md in
+// data/plays/: the hook-angle matcher AND the draft engine pick it up on the
+// next request, no restart. Creation never overwrites an existing file.
+app.get('/api/plays', async (_req, res) => {
+  res.json({ plays: await loadPlays(), triggers: KNOWN_TRIGGERS })
+})
+app.post('/api/plays', async (req, res) => {
+  try {
+    res.status(201).json(await createPlay(req.body ?? {}))
+  } catch (err) {
+    res.status(err.code === 'bad-input' ? 400 : 500).json({ error: err.message })
+  }
+})
 
 // Phase 6 — chat grounded on one account's research JSON. Direct Anthropic
 // API call (key from macOS Keychain), no MCPs; streams NDJSON back.
