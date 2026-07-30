@@ -67,6 +67,8 @@ const NEXT_CONTRACT = `Return JSON:
 }
 Continue the thread: reference what was already sent (from the touch history) without repeating its proof point. If the contact replied, this is a reply-handling message, not a cold touch.
 
+If channel is "linkedin": this is a quick relevant touch, NOT a mini-email — follow the "LinkedIn flow touches" rules in anatomy.md exactly (1-2 sentences, ≤300 characters, no stats/proof points/meeting asks, calibrated to who this person is). LinkedIn touches are exempt from the new-proof-point rule below — they add presence, not proof.
+
 THREAD CONTINUITY — hard rules:
 - Read the BODIES of prior outbound touches in the history. The value thread they establish for this persona (e.g. "intent signal -> CRM -> scoring/routing" for RevOps) is THE thread. Your message deepens it with a NEW proof point or facet — it never re-pitches the same point and never pivots to a different value story mid-sequence. Two unrelated pitches in one thread read like two different vendors.
 - The angle must fit THIS contact's persona and what they own. An account-level play (e.g. AEO) only enters the thread if it can be expressed in this persona's terms; otherwise it belongs to a different contact at the account.
@@ -211,7 +213,7 @@ export async function handleDraft(req, res) {
     `TASK: draft a ${kind === 'pack' ? 'flow enrollment pack' : 'single next-step message'} for the contact below.`,
     `CONTACT: ${JSON.stringify({ name: contact.name, title: contact.title, persona: contact.persona, step: contact.step, hook: contact.hook || null, status: contact.status, nextAction: contact.nextAction })}`,
     ...(dueStep
-      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point). If the step is an email step ("Send email template"), channel MUST be "email".`]
+      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point). If the step is an email step ("Send email template"), channel MUST be "email". If it is a LinkedIn step ("Linkedin Activity", "InMail"), channel MUST be "linkedin" — a quick relevant touch per anatomy.md, not a value pitch.`]
       : []),
     ...(batchContext
       ? [`ALREADY DRAFTED for colleagues at this account today — assume they forward and compare emails:\n${batchContext.slice(0, 4000)}\nHard requirement: do NOT reuse any of these subjects, opening lines, or hook framings. Take a genuinely different angle for THIS person: a different proof point, a different facet (head-to-head result vs category absence vs review-equity vs news/hiring), or the next-best grounded play — and tie it to THIS person's role. Near-identical emails across colleagues read as blast automation and burn the whole account.`]
