@@ -74,14 +74,28 @@ const raw = await fs.readFile(file, 'utf8')
 let rows = parseCsv(raw).filter((r) => r.Name && r.Account)
 if (ONLY) rows = rows.filter((r) => ONLY.includes(r.Account.toLowerCase()))
 
-// Dedupe (a person can appear twice if enrolled in two flows).
+// A person can be due for MORE than one step on the same day — Groove
+// exports one row per due step (e.g. Day 2 = Cold Call 1 AND Email 1), so
+// dedupe on person+step: exact duplicate rows collapse, distinct steps all
+// get drafted.
+const personKey = (r) => r['SFDC ID'] || r.Email?.toLowerCase() || `${r.Account}|${r.Name}`.toLowerCase()
 const seen = new Set()
 rows = rows.filter((r) => {
-  const k = r['SFDC ID'] || r.Email?.toLowerCase() || `${r.Account}|${r.Name}`.toLowerCase()
+  const k = `${personKey(r)}|${(r['Current Step'] ?? '').toLowerCase()}`
   if (seen.has(k)) return false
   seen.add(k)
   return true
 })
+
+// Every step a person is due for, so the nextAction stamp shows all of them.
+const stepsByPerson = new Map()
+for (const r of rows) {
+  const s = r['Current Step'] || null
+  if (!s) continue
+  const k = personKey(r)
+  if (!stepsByPerson.has(k)) stepsByPerson.set(k, [])
+  if (!stepsByPerson.get(k).includes(s)) stepsByPerson.get(k).push(s)
+}
 
 const existing = await store.readStore()
 const bySfId = new Map(existing.contacts.filter((c) => c.sfContactId).map((c) => [c.sfContactId, c]))
@@ -102,14 +116,23 @@ console.log(`${path.basename(file)}: ${rows.length} due` + (DRY ? ' [DRY RUN]' :
 
 const targets = [] // [{row, contact}]
 const today = new Date().toLocaleDateString('en-CA')
+// A person with two due steps yields two rows — resolve/create/stamp them
+// once, then reuse the contact for their later rows.
+const resolvedThisRun = new Map() // personKey → contact
 let created = 0
 let stamped = 0
 for (const r of rows) {
   const sfId = r['SFDC ID'] || null
   const accountId = accountByName.get(r.Account.toLowerCase()) ?? null
-  // Due today = the schedule. Stamped on every resolved row (created or
+  const pk = personKey(r)
+  // Due today = the schedule. Stamped on every resolved person (created or
   // matched) so the Accounts/Day views track Groove without manual entry.
-  const due = { nextAction: r['Current Step'] || null, nextDate: today }
+  // All of today's steps joined, e.g. "Day 2 - Cold Call 1 + Day 2 - Send…".
+  const due = { nextAction: stepsByPerson.get(pk)?.join(' + ') || null, nextDate: today }
+  if (resolvedThisRun.has(pk)) {
+    targets.push({ row: r, contact: resolvedThisRun.get(pk) })
+    continue
+  }
   let contact =
     (sfId && bySfId.get(sfId)) ||
     (r.Email && byEmail.get(r.Email.toLowerCase())) ||
@@ -139,6 +162,7 @@ for (const r of rows) {
     contact = res?.contact ?? res ?? contact
     stamped++
   }
+  resolvedThisRun.set(pk, contact)
   targets.push({ row: r, contact })
 }
 console.log(`resolved: ${targets.length - created} matched, ${created} created` + (DRY ? '' : ` · next step/date stamped on ${stamped + created}`))
@@ -159,10 +183,14 @@ const date = new Date().toISOString().slice(0, 10)
 const outDir = path.join(paths.dataDir, 'drafts')
 const jsonFile = path.join(outDir, `due-${date}.json`)
 
+// A day-file entry is one contact × one step (a person can hold both a call
+// script and an email draft for the same day).
+const entryKey = (contactId, step) => `${contactId}|${step ?? ''}`
+
 // Colleagues at one account compare inboxes — every draft sees what was
 // already written for that account (earlier today + this run) and must take
 // a different angle. Prior entries being redrafted right now don't count.
-const targetIds = new Set(capped.map((t) => t.contact.id))
+const targetKeys = new Set(capped.map((t) => entryKey(t.contact.id, t.row['Current Step'] || null)))
 let prior = []
 try {
   prior = JSON.parse(await fs.readFile(jsonFile, 'utf8')).drafts ?? []
@@ -179,7 +207,7 @@ const rememberDraft = (account, entry) => {
   historyByAccount.get(account).push(summarize(entry))
 }
 for (const e of prior) {
-  if (e.draft && !targetIds.has(e.contactId)) rememberDraft(e.account, e)
+  if (e.draft && !targetKeys.has(entryKey(e.contactId, e.step))) rememberDraft(e.account, e)
 }
 
 const results = []
@@ -236,8 +264,8 @@ try {
   /* first run today */
 }
 const mergedMap = new Map()
-for (const e of fresh) mergedMap.set(e.contactId ?? e.name, e)
-for (const r of results) mergedMap.set(r.contactId ?? r.name, r)
+for (const e of fresh) mergedMap.set(entryKey(e.contactId ?? e.name, e.step), e)
+for (const r of results) mergedMap.set(entryKey(r.contactId ?? r.name, r.step), r)
 const merged = [...mergedMap.values()]
 
 await fs.writeFile(

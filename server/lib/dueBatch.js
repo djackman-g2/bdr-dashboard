@@ -110,7 +110,7 @@ const CHANNEL_ACTIVITY = { email: 'email', linkedin: 'linkedin', call: 'call' }
 
 let sentChain = Promise.resolve()
 
-export function markDueDraft({ date, contactId, sent }) {
+export function markDueDraft({ date, contactId, step, sent }) {
   const run = async () => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date ?? '')) {
       throw Object.assign(new Error('date must be YYYY-MM-DD'), { code: 'bad-input' })
@@ -122,8 +122,11 @@ export function markDueDraft({ date, contactId, sent }) {
     } catch {
       throw Object.assign(new Error(`no drafts file for ${date}`), { code: 'not-found' })
     }
-    // Same key the batch script dedupes on — contactId, name for legacy rows.
-    const entry = (day.drafts ?? []).find((e) => (e.contactId ?? e.name) === contactId)
+    // An entry is one contact × one step — a person can hold both a call
+    // script and an email draft for the same day, so step disambiguates.
+    // step undefined = legacy caller, match on contact alone.
+    const mine = (day.drafts ?? []).filter((e) => (e.contactId ?? e.name) === contactId)
+    const entry = step === undefined ? mine[0] : mine.find((e) => (e.step ?? null) === (step ?? null))
     if (!entry) throw Object.assign(new Error('no such draft in that day file'), { code: 'not-found' })
 
     if (sent && !entry.sentAt) {

@@ -183,15 +183,18 @@ app.get('/api/draft-due', async (_req, res) => res.json(await dueBatchStatus()))
 // becomes thread history for future drafts to that person. sent:false undoes
 // both. Responds with the full updated day file so the page can re-render.
 app.post('/api/draft-due/sent', async (req, res) => {
-  const { date, contactId, sent } = req.body ?? {}
+  const { date, contactId, step, sent } = req.body ?? {}
   if (typeof contactId !== 'string' || !contactId) {
     return res.status(400).json({ error: 'contactId is required' })
+  }
+  if (step !== undefined && step !== null && typeof step !== 'string') {
+    return res.status(400).json({ error: 'step must be a string when given' })
   }
   if (typeof sent !== 'boolean') {
     return res.status(400).json({ error: 'sent must be a boolean' })
   }
   try {
-    res.json(await markDueDraft({ date, contactId, sent }))
+    res.json(await markDueDraft({ date, contactId, step, sent }))
   } catch (err) {
     if (err.code === 'bad-input') return res.status(400).json({ error: err.message })
     if (err.code === 'not-found') return res.status(404).json({ error: err.message })

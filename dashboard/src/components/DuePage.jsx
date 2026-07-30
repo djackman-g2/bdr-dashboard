@@ -148,18 +148,21 @@ export default function DuePage() {
     poll()
   }
 
+  // A person can have two drafts in one day (call script + email on the same
+  // flow day) — contactId + step identifies one card.
+  const draftKey = (r) => `${r.contactId ?? r.name}|${r.step ?? ''}`
+
   // Mark a draft done/undone: the server stamps the day file, logs (or
   // removes) the tracker activity, and returns the updated file to render.
   const mark = async (r, sent) => {
     if (!results?.date) return
-    const key = r.contactId ?? r.name
-    setMarking(key)
+    setMarking(draftKey(r))
     setError(null)
     try {
       const res = await fetch('/api/draft-due/sent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date: results.date, contactId: key, sent }),
+        body: JSON.stringify({ date: results.date, contactId: r.contactId ?? r.name, step: r.step ?? null, sent }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`)
@@ -256,10 +259,10 @@ export default function DuePage() {
                 ))}
                 {list.map((r) => (
                   <DraftCard
-                    key={`${r.contactId}-${r.name}`}
+                    key={draftKey(r)}
                     r={r}
                     onMark={mark}
-                    busy={marking === (r.contactId ?? r.name)}
+                    busy={marking === draftKey(r)}
                   />
                 ))}
               </section>
@@ -273,10 +276,10 @@ export default function DuePage() {
               <div className="mt-2 space-y-2">
                 {done.map((r) => (
                   <DraftCard
-                    key={`${r.contactId}-${r.name}`}
+                    key={draftKey(r)}
                     r={r}
                     onMark={mark}
-                    busy={marking === (r.contactId ?? r.name)}
+                    busy={marking === draftKey(r)}
                   />
                 ))}
               </div>
