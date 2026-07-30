@@ -163,6 +163,12 @@ app.post('/api/draft-due', express.text({ type: '*/*', limit: '2mb' }), async (r
   if (!/name/i.test(header) || !/account/i.test(header)) {
     return res.status(400).json({ error: 'that does not look like the Groove due-list export (need Name + Account columns)' })
   }
+  // A due list without steps means every draft is a channel/step guess (a
+  // people/manual-import export has this shape) — 2026-07-30 one of those
+  // produced a LinkedIn touch for a contact due a Day 7 email. Fail loudly.
+  if (!/current step/i.test(header)) {
+    return res.status(400).json({ error: 'no "Current Step" column — this looks like a Groove people export, not the Flows → due list. Re-export the due list so each row carries its step.' })
+  }
   const limit = req.query.limit ? parseInt(req.query.limit, 10) : undefined
   if (req.query.limit && (!Number.isFinite(limit) || limit < 1)) {
     return res.status(400).json({ error: 'limit must be a positive integer' })

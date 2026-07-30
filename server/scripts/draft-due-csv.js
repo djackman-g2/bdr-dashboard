@@ -72,6 +72,12 @@ const patchContact = (id, p) => (useApi ? apiCall('PATCH', `/api/tracker/contact
 // ---------- parse + resolve ----------
 const raw = await fs.readFile(file, 'utf8')
 let rows = parseCsv(raw).filter((r) => r.Name && r.Account)
+// Same guard as POST /api/draft-due: a CSV without steps (Groove people/
+// manual-import export) makes every draft a channel/step guess.
+if (rows.length && rows.every((r) => !r['Current Step'])) {
+  console.error('no "Current Step" values — this looks like a Groove people export, not the Flows → due list. Re-export the due list so each row carries its step.')
+  process.exit(1)
+}
 if (ONLY) rows = rows.filter((r) => ONLY.includes(r.Account.toLowerCase()))
 
 // A person can be due for MORE than one step on the same day — Groove
