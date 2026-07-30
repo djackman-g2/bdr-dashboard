@@ -11,6 +11,7 @@ import crypto from 'node:crypto'
 import { config, paths } from './config.js'
 import { readMeta, updateMeta } from './meta.js'
 import { runAiVisibility } from './aiVisibility.js'
+import { runCommunity } from './community.js'
 
 export const jobEvents = new EventEmitter()
 
@@ -247,6 +248,21 @@ async function finishJob(job, result) {
     }
   }
 
+  // Community/UGC section rides the same hook when enabled (config default
+  // off — flip community.run_after_deep once Reddit creds are in the Keychain).
+  if (ok && job.mode === 'deep' && config.community?.run_after_deep === true) {
+    const note = await autoSection(job, 'community', async (slug) => {
+      const section = await runCommunity(slug)
+      return `community auto-run after deep (server): ${section.threads.length} threads, summary: ${section.summary ?? 'n/a'}`
+    })
+    if (note) {
+      await updateMeta((m) => {
+        const run = (m.runs ?? []).find((r) => r.id === job.id)
+        if (run) run.notes = [...(run.notes ?? []), note]
+      })
+    }
+  }
+
   // Groove mirror: the nightly light run means the book is fresh — follow it
   // with an outreach sync so the tracker's flow positions are fresh too.
   if (ok && job.mode === 'light' && job.query === 'ALL' && config.outreach?.sync_after_light !== false) {
@@ -290,6 +306,27 @@ async function autoAiVisibility(job) {
   } catch (err) {
     console.error(`[ai-visibility] auto-run failed for ${job.query}: ${err.message}`)
     return `ai_visibility auto-run after deep FAILED (${err.code ?? 'error'}): ${err.message}`
+  }
+}
+
+// Generic after-deep section hook: resolve the job's query to an index slug
+// (same rules as autoAiVisibility) and run fn(slug) → run-entry note.
+async function autoSection(job, label, fn) {
+  try {
+    const index = JSON.parse(await fsp.readFile(paths.index, 'utf8'))
+    const q = job.query.toLowerCase()
+    const qSlug = q.replace(/\./g, '-')
+    const entry = (index.accounts ?? []).find(
+      (a) => a.domain === q || a.slug === qSlug || a.slug === q || (a.name ?? '').toLowerCase() === q
+    )
+    if (!entry) {
+      console.log(`[${label}] no index entry matches "${job.query}" — skipped`)
+      return null
+    }
+    return await fn(entry.slug)
+  } catch (err) {
+    console.error(`[${label}] auto-run failed for ${job.query}: ${err.message}`)
+    return `${label} auto-run after deep FAILED (${err.code ?? 'error'}): ${err.message}`
   }
 }
 

@@ -65,6 +65,15 @@
     "max_excerpt_chars": 2000,
     "run_after_deep": true
   },
+  "community": {
+    "_comment": "UGC/community-chatter module (feeds the ugc-narrative play). Server-side runner: Reddit official API + HN Algolia + one LLM relevance pass via the chat client. Reddit creds live ONLY in the macOS Keychain as client_id:client_secret — add with: security add-generic-password -U -a \"$USER\" -s bdr-dashboard-reddit -w \"<client_id>:<client_secret>\" (script app from reddit.com/prefs/apps). No creds = Reddit skipped, HN still runs.",
+    "keychain_service": "bdr-dashboard-reddit",
+    "window_days": 365,
+    "max_threads": 12,
+    "model": null,
+    "classify_max_tokens": 1500,
+    "run_after_deep": false
+  },
   "chat": {
     "_comment": "Phase 6 account chat. Direct Anthropic API (or a LiteLLM proxy via base_url — must expose the Anthropic /v1/messages surface), no MCPs. Key lives ONLY in the macOS Keychain under keychain_service — add it with: security add-generic-password -U -a \"$USER\" -s bdr-dashboard-anthropic -w",
     "base_url": "https://llmproxy.g2.com",

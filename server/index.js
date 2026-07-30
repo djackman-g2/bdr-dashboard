@@ -20,6 +20,7 @@ import { handleChat } from './lib/chat.js'
 import { handleDraft } from './lib/draft.js'
 import { startDueBatch, dueBatchStatus, markDueDraft } from './lib/dueBatch.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
+import { runCommunity } from './lib/community.js'
 import { trackerRouter } from './lib/tracker.js'
 import { loadPlays, createPlay, KNOWN_TRIGGERS } from './lib/plays.js'
 
@@ -220,6 +221,31 @@ app.post('/api/ai-visibility/:slug', async (req, res) => {
     }
     if (err.code === 'auth') return res.status(503).json({ error: err.message })
     res.status(502).json({ error: err.message ?? 'ai_visibility run failed' })
+  }
+})
+
+// Community/UGC section update — Reddit (official API, Keychain creds) + HN
+// threads about the account, LLM-classified for relevance, ajv-validated
+// atomic write; refreshed_at untouched. Feeds the ugc-narrative play trigger.
+app.post('/api/community/:slug', async (req, res) => {
+  const { slug } = req.params
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(slug)) {
+    return res.status(400).json({ error: 'slug must be an account slug' })
+  }
+  try {
+    const section = await runCommunity(slug)
+    res.json({ slug, community: section })
+  } catch (err) {
+    if (err.code === 'not-found') return res.status(404).json({ error: err.message })
+    if (err.code === 'no-key') {
+      return res.status(503).json({
+        error:
+          'Anthropic API key not set. Add it to the macOS Keychain (it is never stored in a file): ' +
+          'security add-generic-password -a "$USER" -s bdr-dashboard-anthropic -w',
+      })
+    }
+    if (err.code === 'auth') return res.status(503).json({ error: err.message })
+    res.status(502).json({ error: err.message ?? 'community run failed' })
   }
 })
 

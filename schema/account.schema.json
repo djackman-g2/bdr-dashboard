@@ -259,6 +259,54 @@
         "as_of": { "type": "string", "format": "date-time" }
       }
     },
+    "community": {
+      "type": "object",
+      "description": "UGC/community-chatter module: real user threads (Reddit official API, Hacker News) that feed LLM buyer journeys — raw material for the ugc-narrative play. Written by the server-side runner (server/lib/community.js), not the pipeline. Threads must be real and read by a human before any send; `relevant` comes from an LLM classification pass, not string match.",
+      "required": ["threads", "sources_checked", "as_of"],
+      "additionalProperties": false,
+      "properties": {
+        "threads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "title", "url", "relevant"],
+            "additionalProperties": false,
+            "properties": {
+              "source": { "type": "string", "enum": ["reddit", "hackernews"] },
+              "title": { "type": "string" },
+              "url": { "type": "string" },
+              "created": { "type": ["string", "null"] },
+              "subreddit": { "type": ["string", "null"] },
+              "score": { "type": ["number", "null"] },
+              "comments": { "type": ["number", "null"] },
+              "snippet": { "type": ["string", "null"] },
+              "relevant": { "type": "boolean" },
+              "feedback": { "type": ["boolean", "null"], "description": "true = actual product feedback/discussion, not a passing mention" },
+              "sentiment": { "type": ["string", "null"], "enum": ["positive", "negative", "mixed", "neutral", null] },
+              "note": { "type": ["string", "null"], "description": "Classifier's one-line why" }
+            }
+          }
+        },
+        "sources_checked": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["source", "status"],
+            "additionalProperties": false,
+            "properties": {
+              "source": { "type": "string" },
+              "status": { "type": "string", "enum": ["ok", "skipped_no_creds", "error"] },
+              "note": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "summary": {
+          "type": ["string", "null"],
+          "description": "One deterministic line — e.g. '3 relevant threads (1 product feedback) on reddit + HN; top: r/msp \"...\" 2026-06-01'."
+        },
+        "as_of": { "type": "string", "format": "date-time" }
+      }
+    },
     "messaging": {
       "type": "object",
       "additionalProperties": false,

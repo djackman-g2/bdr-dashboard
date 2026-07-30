@@ -17,11 +17,11 @@ import { personas } from '../../data/personas.js'
 
 const PLAYS_DIR = path.join(paths.dataDir, 'plays')
 
-export const KNOWN_TRIGGERS = ['ai_visibility', 'closed_lost', 'no_history', 'mid_flow', 'persona', 'manual']
+export const KNOWN_TRIGGERS = ['ai_visibility', 'community', 'closed_lost', 'no_history', 'mid_flow', 'persona', 'manual']
 
 // Base priority per trigger; the account's declared playType adds a boost that
 // puts its play on top. ai_visibility scores split absent vs appeared.
-const TRIGGER_SCORE = { ai_visibility: 100, closed_lost: 90, no_history: 60, mid_flow: 50, persona: 40 }
+const TRIGGER_SCORE = { ai_visibility: 100, community: 95, closed_lost: 90, no_history: 60, mid_flow: 50, persona: 40 }
 const PLAYTYPE_AFFINITY = { AEO: 'aeo-screenshot', 'buyer-intent': 'buyer-intent', winback: 'winback' }
 
 // ---------- frontmatter ----------
@@ -165,6 +165,22 @@ function extractFacts({ dossier, contact, account }) {
   facts.recent_reviews_line =
     recent != null && recent <= 5 ? `; only ${recent} review${recent === 1 ? '' : 's'} added in the last 60 days` : ''
 
+  // community: the best VETTED thread — LLM-classified relevant, product
+  // feedback preferred, newest first. Hooks only ever cite a thread the
+  // classifier passed; the play's read-it-first guardrail still applies.
+  const threads = (dossier?.community?.threads ?? []).filter((t) => t.relevant)
+  if (threads.length) {
+    const best =
+      [...threads].sort(
+        (a, b) => (b.feedback === true) - (a.feedback === true) || (b.created ?? '').localeCompare(a.created ?? '')
+      )[0]
+    facts.thread_title = best.title.length > 80 ? best.title.slice(0, 77) + '…' : best.title
+    facts.thread_url = best.url
+    facts.thread_source = best.subreddit ?? (best.source === 'hackernews' ? 'Hacker News' : best.source)
+    facts.thread_date = best.created ?? null
+    facts.community_as_of = dossier.community.as_of
+  }
+
   // ai_visibility: pick the strongest query — an absence beats an appearance.
   const queries = dossier?.ai_visibility?.queries ?? []
   if (queries.length) {
@@ -231,6 +247,15 @@ export async function hookAngles(contact, account) {
             }
         break
       }
+      case 'community':
+        if (facts.thread_url) {
+          fired = {
+            why: `community ${facts.community_as_of?.slice(0, 10) ?? ''}: real ${facts.thread_source} thread (${facts.thread_date ?? 'undated'}) — READ IT before sending`,
+            score: TRIGGER_SCORE.community,
+            template: play.hook,
+          }
+        }
+        break
       case 'closed_lost':
         if (CLOSED_LOST_RE.test(dossier?.salesforce?.crm_history_notes ?? '')) {
           fired = { why: 'CRM history shows closed-lost / non-renewal (check tone tiers before drafting)', score: TRIGGER_SCORE.closed_lost, template: play.hook }

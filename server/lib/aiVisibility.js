@@ -53,10 +53,11 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // "Measured") match any prose and make company_appeared a false positive —
 // those only count via their domain. Short names are suspect too.
 const GENERIC_NAMES = new Set(['you', 'button', 'measured', 'one', 'box', 'wave', 'clear', 'simple', 'focus'])
-const isWeakName = (name) => name.length < 5 || GENERIC_NAMES.has(name.toLowerCase())
+export const isWeakName = (name) => name.length < 5 || GENERIC_NAMES.has(name.toLowerCase())
 
 // Name/domain variants that count as "the company appeared".
-function subjectVariants(account) {
+// (Exported for the community module — same generic-name lesson applies.)
+export function subjectVariants(account) {
   const variants = new Set()
   const name = (account.name ?? '').trim()
   if (name && !isWeakName(name)) {
@@ -70,7 +71,7 @@ function subjectVariants(account) {
 
 // What to call the company in prompts: generic names go by their domain
 // ("You.com", not "You") so the question is unambiguous to the model too.
-function subjectDisplayName(account) {
+export function subjectDisplayName(account) {
   const name = (account.name ?? '').trim()
   return name && !isWeakName(name) ? name : (account.domain ?? name)
 }
