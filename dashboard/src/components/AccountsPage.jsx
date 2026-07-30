@@ -14,6 +14,7 @@ import {
   personaLabel,
 } from '../lib/tracker.js'
 import { relativeTime } from '../lib/format.js'
+import AutoGrowTextarea from './AutoGrowTextarea.jsx'
 
 export function CopyBtn({ text, label = 'copy' }) {
   const [copied, setCopied] = useState(false)
@@ -530,7 +531,7 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
       </td>
       <td className="min-w-48 py-1 pr-2">
         <div className="flex items-start gap-1">
-          <input
+          <AutoGrowTextarea
             value={draft.hook}
             onChange={set('hook')}
             onBlur={save('hook', { emptyAs: '' })}

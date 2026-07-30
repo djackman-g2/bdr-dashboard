@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { TYPE_LABELS, OUTCOME_LABELS, goalState, pace, connectRate, patchTrackerContact, watchTrackerContact, personaLabel } from '../lib/tracker.js'
 import { formatDate, relativeTime } from '../lib/format.js'
+import AutoGrowTextarea from './AutoGrowTextarea.jsx'
 
 const STATE_TEXT = {
   stretch: 'text-primary-700 dark:text-primary-300',
@@ -135,7 +136,7 @@ function WatchRow({ c, o, accountName, busy, onPatch, targeted, onTarget }) {
         )}
       </td>
       <td className="min-w-48 py-1 pr-2">
-        <input
+        <AutoGrowTextarea
           value={draft.notes}
           onChange={set('notes')}
           onBlur={save('notes')}
