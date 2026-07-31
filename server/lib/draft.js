@@ -63,11 +63,13 @@ const NEXT_CONTRACT = `Return JSON:
   "flag_warnings": ["<any account flags, verbatim>"],
   "channel": "email" | "linkedin" | "call",
   "subject": "<subject, or null for linkedin/call>",
-  "body": "<the message (or call talking points if channel=call), plain text>"
+  "body": "<the message (voicemail script or call talking points if channel=call), plain text>"
 }
 Continue the thread: reference what was already sent (from the touch history) without repeating its proof point. If the contact replied, this is a reply-handling message, not a cold touch.
 
 If channel is "linkedin": this is a quick relevant touch, NOT a mini-email — follow the "LinkedIn flow touches" rules in anatomy.md exactly (1-2 sentences, ≤300 characters, no stats/proof points/meeting asks, calibrated to who this person is). LinkedIn touches are exempt from the new-proof-point rule below — they add presence, not proof.
+
+If channel is "call": follow anatomy.md exactly. A VM step ("VM"/"voicemail" in the step name) gets a full SPOKEN voicemail script (75-110 words): signal open (never your name first), a stakes line that creates real urgency from a moving fact, ONE value line, CTA pointing at the companion email or asking plainly for the callback. A live-call step gets 3-5 talking points, then "---" and a compressed no-answer voicemail fallback. Short generic voicemails with no stakes are rejected work.
 
 THREAD CONTINUITY — hard rules:
 - Read the BODIES of prior outbound touches in the history. The value thread they establish for this persona (e.g. "intent signal -> CRM -> scoring/routing" for RevOps) is THE thread. Your message deepens it with a NEW proof point or facet — it never re-pitches the same point and never pivots to a different value story mid-sequence. Two unrelated pitches in one thread read like two different vendors.
@@ -213,7 +215,7 @@ export async function handleDraft(req, res) {
     `TASK: draft a ${kind === 'pack' ? 'flow enrollment pack' : 'single next-step message'} for the contact below.`,
     `CONTACT: ${JSON.stringify({ name: contact.name, title: contact.title, persona: contact.persona, step: contact.step, hook: contact.hook || null, status: contact.status, nextAction: contact.nextAction })}`,
     ...(dueStep
-      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point). If the step is an email step ("Send email template"), channel MUST be "email". If it is a LinkedIn step ("Linkedin Activity", "InMail"), channel MUST be "linkedin" — a quick relevant touch per anatomy.md, not a value pitch.`]
+      ? [`DUE TODAY (Groove flow step): ${dueStep.slice(0, 200)} — draft the message for THIS step. Its position in the sequence tells you which touch this is (e.g. "Email 2" = second email: new angle, brief callback, no repeated proof point). If the step is an email step ("Send email template"), channel MUST be "email". If it is a LinkedIn step ("Linkedin Activity", "InMail"), channel MUST be "linkedin" — a quick relevant touch per anatomy.md, not a value pitch. If it is a VM step ("VM"/"voicemail" in the name), channel MUST be "call" and the body MUST be a full spoken voicemail script per anatomy.md's "Voicemail scripts" section — signal open, real-stakes urgency line, one value line, email/callback CTA — never bullet talking points. Any other call step ("Cold Call") is a live-dial step: talking points + the no-answer voicemail fallback per anatomy.md.`]
       : []),
     ...(batchContext
       ? [`ALREADY DRAFTED for colleagues at this account today — assume they forward and compare emails:\n${batchContext.slice(0, 4000)}\nHard requirement: do NOT reuse any of these subjects, opening lines, or hook framings. Take a genuinely different angle for THIS person: a different proof point, a different facet (head-to-head result vs category absence vs review-equity vs news/hiring), or the next-best grounded play — and tie it to THIS person's role. Near-identical emails across colleagues read as blast automation and burn the whole account.`]
