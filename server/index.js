@@ -306,7 +306,11 @@ async function catchupCheck() {
   const hours = config.refresh.catchup_after_hours ?? 26
   try {
     const meta = await readMeta()
-    const last = meta.last_light_refresh_at ? Date.parse(meta.last_light_refresh_at) : 0
+    // Catch-up recovers MISSED nightlies — it never starts the very first run.
+    // A fresh install (null timestamp) would otherwise auto-spawn a pipeline
+    // run at boot; the first run must be the nightly cron or a human click.
+    if (!meta.last_light_refresh_at) return
+    const last = Date.parse(meta.last_light_refresh_at)
     if (Date.now() - last < hours * 3_600_000) return
     const r = await enqueue({ query: 'ALL', mode: 'light', trigger: 'catchup', origin: 'auto' })
     if (r.error) {
