@@ -54,7 +54,7 @@ const PACK_CONTRACT = `Return JSON:
   "linkedin_inmail": "<InMail body, 300 CHARACTERS max, no links, no emojis>",
   "call_points": ["<3-5 bullet talking points for the flow's call steps>"]
 }
-The three emails are Days 1/7/14 of the flow and must follow anatomy.md exactly: email1 = opener 120-160 words (signal/scoop -> their challenge -> one G2 capability -> role CTA); email2 = NEW angle 100-140 words with a brief callback to email1, same CTA; email3 = permission-to-close 60-80 words MAX, no calendar link, one async value item, easy to say no. Never repeat a proof point across emails. Bodies are plain prose, line breaks as \\n, no HTML, no bullets.`
+The three emails are Days 1/7/14 of the flow and must follow anatomy.md exactly: every email <=100 words (60-90 is the sweet spot — less is more); email1 = opener (signal/scoop -> their challenge -> one G2 capability -> role CTA with the cost of waiting); email2 = NEW angle with a brief callback to email1, same CTA; email3 = permission-to-close 40-70 words, no calendar link, one async value item, easy to say no. CTAs on emails 1-2 carry FOMO grounded in a real moving fact per anatomy.md, never invented scarcity. Never repeat a proof point across emails. Bodies are plain prose, line breaks as \\n, no HTML, no bullets.`
 
 const NEXT_CONTRACT = `Return JSON:
 {
