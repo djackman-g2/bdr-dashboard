@@ -204,8 +204,15 @@ try {
   /* first run today */
 }
 const summarize = (e) => {
-  const opening = (e.draft.body ?? '').split('\n')[0].slice(0, 120)
-  return `- ${e.name}: play=${e.draft.play}, subject="${e.draft.subject ?? '—'}", opening="${opening}"`
+  const body = e.draft.body ?? ''
+  const opening = body.split('\n')[0].slice(0, 120)
+  // Colleagues comparing inboxes notice a repeated stat as fast as a repeated
+  // subject — surface every number the draft spent so the next one can't reuse it.
+  const stats = [...new Set(body.match(/\d+(?:\.\d+)?(?:%|x\b)/gi) ?? [])].slice(0, 8)
+  return (
+    `- ${e.name}: play=${e.draft.play}, subject="${e.draft.subject ?? '—'}", opening="${opening}"` +
+    (stats.length ? `, stats used: ${stats.join(', ')}` : '')
+  )
 }
 const historyByAccount = new Map()
 const rememberDraft = (account, entry) => {
