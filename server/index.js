@@ -25,6 +25,7 @@ import { trackerRouter } from './lib/tracker.js'
 import { loadPlays, createPlay, KNOWN_TRIGGERS } from './lib/plays.js'
 
 fs.mkdirSync(paths.logsDir, { recursive: true })
+fs.mkdirSync(paths.accountsDir, { recursive: true })
 
 const app = express()
 app.use('/api', express.json())

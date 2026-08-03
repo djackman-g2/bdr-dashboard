@@ -12,9 +12,23 @@ import { paths } from './config.js'
 
 let chain = Promise.resolve()
 
+// Fresh clones have no data/meta.json yet — treat missing as empty, and let
+// the first updateMeta() write create it.
+const EMPTY_META = () => ({
+  last_light_refresh_at: null,
+  last_deep_refresh_at: null,
+  job_queue: [],
+  runs: [],
+})
+
 export async function readMeta() {
-  const raw = await fs.readFile(paths.meta, 'utf8')
-  return JSON.parse(raw)
+  try {
+    const raw = await fs.readFile(paths.meta, 'utf8')
+    return JSON.parse(raw)
+  } catch (err) {
+    if (err.code === 'ENOENT') return EMPTY_META()
+    throw err
+  }
 }
 
 // mutate(meta) edits in place or returns a replacement. Returns final meta.

@@ -6,8 +6,12 @@ async function fetchJson(url) {
   return res.json()
 }
 
-export function fetchIndex() {
-  return fetchJson('/data/index.json')
+// 404 = fresh clone with no researched accounts yet — render empty, not an error.
+export async function fetchIndex() {
+  const res = await fetch('/data/index.json')
+  if (res.status === 404) return { generated_at: null, accounts: [] }
+  if (!res.ok) throw new Error(`/data/index.json: ${res.status}`)
+  return res.json()
 }
 
 export function fetchAccount(slug) {
