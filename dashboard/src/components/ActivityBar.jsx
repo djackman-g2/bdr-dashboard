@@ -116,6 +116,19 @@ export default function ActivityBar({ tracker, targetContact, onClearTarget, onL
               </span>
             )}
             <span className="ml-auto flex items-center gap-2 text-xs text-zinc-500">
+              {today.spread && (
+                <span
+                  title={`Prospecting spread — add ~${today.spread.goal_people} NEW people from ~${today.spread.goal_accounts} DIFFERENT accounts today instead of grinding one account. Counts contacts added to the tracker today.`}
+                  className={`rounded-md border px-2 py-0.5 tabular-nums ${
+                    today.spread.accounts >= today.spread.goal_accounts
+                      ? 'border-success-400 bg-success-100 text-success-700 dark:border-success-700 dark:bg-success-900/50 dark:text-success-300'
+                      : 'border-zinc-300 dark:border-zinc-700'
+                  }`}
+                >
+                  new adds {today.spread.people} ppl · {today.spread.accounts} accts
+                  <span className="opacity-60"> / goal {today.spread.goal_people}×{today.spread.goal_accounts}</span>
+                </span>
+              )}
               {callPace && callPace.need > 0 && callPace.perHour !== null && (
                 <span className="tabular-nums">{callPace.perHour.toFixed(1)} calls/hr to floor by 5pm</span>
               )}

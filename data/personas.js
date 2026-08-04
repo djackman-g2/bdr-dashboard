@@ -56,6 +56,7 @@ export const personas = {
     hookAngle:
       "When a buyer asks ChatGPT to recommend a [category] tool, it pulls from G2. You're not in that answer right now.",
     proofToPull: 'AI-citation absence (the screenshot play), Grid position, category presence',
+    cta: 'STRICT (Declan, 2026-08-04): ownership-routing question ONLY — "who owns your G2 presence today, you or someone on the team?" NEVER ask a C-level/founder for their time (no "20 minutes", no calendar link, any channel); the forward/name is the conversion.',
   },
   demandGenSpecific: {
     // sub-persona, sharper than general marketing

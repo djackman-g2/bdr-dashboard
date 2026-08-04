@@ -229,6 +229,7 @@ export async function addContact({ accountId, persona, name, title, hook, nextAc
   if (!accountId || typeof accountId !== 'string') throw badInput('accountId is required')
   const contact = {
     id: randomUUID(),
+    createdAt: new Date().toISOString(), // feeds the daily prospecting-spread nudge
     name: name?.trim() || null,
     title: title?.trim() || null,
     email: email?.trim() || null,
@@ -376,6 +377,18 @@ export function summarize(store, days = 14) {
       threadIds.set(c.accountId, [...(threadIds.get(c.accountId) ?? []), c.id])
     }
   }
+  // Prospecting spread — the anti-"grind one account all day" nudge: the goal
+  // is ~5 NEW people from ~5 DIFFERENT accounts per day, so pipeline widens
+  // instead of one account absorbing the whole day. Rows without createdAt
+  // predate the field and simply don't count.
+  const addedToday = store.contacts.filter((c) => c.createdAt && localDay(c.createdAt) === today)
+  const spread = {
+    goal_people: 5,
+    goal_accounts: 5,
+    people: addedToday.length,
+    accounts: new Set(addedToday.map((c) => c.accountId)).size,
+  }
+
   return {
     goals: store.goals,
     types: ACTIVITY_TYPES,
@@ -389,6 +402,7 @@ export function summarize(store, days = 14) {
       date: today,
       activities: store.activities.filter((a) => localDay(a.ts) === today),
       ...(byDay.get(today) ?? { counts: {}, outcome_calls: 0, connects: 0 }),
+      spread,
     },
     history,
   }
