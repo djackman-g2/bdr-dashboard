@@ -22,7 +22,7 @@ Follow the SAME rules as the corresponding step in `prompts/refresh-account.md`:
 
 - **news** — WebSearch within `config.news.lookback_days` → WebFetch each source page to confirm date/publisher/claim on-page (`date_confirmed_on_page`). Fetch confirmation pages in parallel where possible. Replace `news[]`; append NEW material events to `signals[]` (keep existing signal entries — never rewrite history).
 - **hiring** — careers page via WebFetch (or a public ATS API when the board exposes one — e.g. Greenhouse/Workable JSON): open roles total, role mix, direction, as-of timestamp. Replace `hiring`.
-- **g2** — G2 MCP Server tools (`show_product`/`show_vendor`; attempt intent tools, expect the known tenant-scoped-suspect result — quarantine per CLAUDE.md). Replace `g2` (fresh ratings/review counts + `presence_summary`).
+- **g2** — G2 MCP Server tools (`show_product`/`show_vendor` for fresh ratings/review counts + `presence_summary`), PLUS the buyer-intent AGGREGATE pull into `g2.buyer_intent` exactly per Step 5 of `refresh-account.md` (`browse_product_buyer_intent` on the main product: totals with `dimensions: "none"`, window with `dimensions: "month"`; counts only — company NAMES never enter the dossier, quarantine on named claims stands). Replace `g2`.
 - **gong** — `ask_account` (workspace "Initial workspace"). Replace `gong`.
 - **messaging** — regenerate from the CURRENT dossier's verified facts only (no new research): 2-4 angles with `grounded_in`, 2-3 openers, `things_to_probe`, fresh `generated_at`. Replace `messaging`.
 - **contacts** — the one section that may spend credits, and the one that is ADDITIVE: existing `icp_contacts` entries are never removed or rewritten (their verification history is real). Procedure:

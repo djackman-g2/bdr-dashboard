@@ -55,7 +55,8 @@ Never report headcount/revenue from a single enrichment source (ZoomInfo is ofte
 ## Step 5 — G2 presence + intent
 
 - Web-first: find the vendor/products on g2.com; then `show_product`/`show_vendor` by slug for ratings/review counts. Use the **G2 MCP Server** tools (`mcp__claude_ai_G2_MCP_Server__*`) — the `G2_MCP_Dev` variants are not allowlisted and will permission-deny headless.
-- Attempt seller intent tools (`browse_buyer_intent` etc.). Known issue: `list_my_products` returns empty under this login — if intent tools fail, record in `sources_missing` and move on. Write a 1-2 sentence `g2.presence_summary` (the outreach wedge).
+- Buyer-intent AGGREGATES (re-verified product-scoped 2026-08-04; the old tenant-scoping quarantine applies only to company NAMES, which stay out of the dossier entirely): pick the main product (highest review count) and call `browse_product_buyer_intent` twice — (a) `dimensions: "none"`, `measures: ["company_count","total_activity","visitor_count"]` for the totals, (b) `dimensions: "month"`, `measures: ["company_count"]` for the window. Write `g2.buyer_intent` = `{product_slug, company_count, visitor_count, total_activity, by_month (months as YYYY-MM), since (first day of the earliest month returned), retrieved_at}`. Zero rows → `company_count: 0` with the months you checked in `note`; tool failure/authorization error → `buyer_intent: null` + record in `sources_missing`. NEVER store or cite the company names the row-level pull returns — named intent claims require Declan's seller-console check (competitive-intent play).
+- Write a 1-2 sentence `g2.presence_summary` (the outreach wedge). Known issue: `list_my_products` returns empty under this login — that alone is not a failure.
 
 ## Step 6 — Gong
 

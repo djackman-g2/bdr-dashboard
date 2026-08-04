@@ -136,7 +136,33 @@
             }
           }
         },
-        "presence_summary": { "type": ["string", "null"], "description": "How this vendor shows up on G2 today — the wedge for outreach." }
+        "presence_summary": { "type": ["string", "null"], "description": "How this vendor shows up on G2 today — the wedge for outreach." },
+        "buyer_intent": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "description": "AGGREGATES ONLY from browse_product_buyer_intent (re-verified product-scoped 2026-08-04). Company NAMES never enter the dossier — named intent claims still require a seller-console check before any use.",
+          "required": ["product_slug", "company_count", "since", "retrieved_at"],
+          "properties": {
+            "product_slug": { "type": "string", "description": "G2 product slug the pull was scoped to (main product = highest review count)" },
+            "company_count": { "type": "integer", "description": "distinct companies showing intent over the feed window" },
+            "visitor_count": { "type": ["integer", "null"] },
+            "total_activity": { "type": ["integer", "null"] },
+            "by_month": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["month", "company_count"],
+                "properties": {
+                  "month": { "type": "string", "description": "YYYY-MM" },
+                  "company_count": { "type": "integer" }
+                }
+              }
+            },
+            "since": { "type": "string", "description": "YYYY-MM-DD — earliest month in the feed; the honest 'as of' window for copy" },
+            "retrieved_at": { "type": "string", "format": "date-time" },
+            "note": { "type": ["string", "null"] }
+          }
+        }
       }
     },
     "signals": {

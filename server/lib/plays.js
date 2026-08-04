@@ -165,6 +165,21 @@ function extractFacts({ dossier, contact, account }) {
   facts.recent_reviews_line =
     recent != null && recent <= 5 ? `; only ${recent} review${recent === 1 ? '' : 's'} added in the last 60 days` : ''
 
+  // g2.buyer_intent: aggregate counts only (names never reach the dossier —
+  // named intent claims stay seller-console-gated). A zero count is real data
+  // but not a hook, so the tokens only fill when there's something to say.
+  const intent = dossier?.g2?.buyer_intent
+  if (intent?.company_count > 0) {
+    facts.intent_company_count = String(intent.company_count)
+    if (intent.since) {
+      const d = new Date(intent.since + 'T00:00:00')
+      facts.intent_since = isNaN(d) ? intent.since : d.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+    }
+    // Pre-composed sentence so hooks read grammatically with or without data.
+    facts.intent_line = `${intent.company_count} companies have researched ${facts.company} on G2${facts.intent_since ? ` since ${facts.intent_since}` : ''} — that activity resolves to named accounts. `
+  }
+  facts.intent_line ??= ''
+
   // community: the best VETTED thread — LLM-classified relevant, product
   // feedback preferred, newest first. Hooks only ever cite a thread the
   // classifier passed; the play's read-it-first guardrail still applies.
