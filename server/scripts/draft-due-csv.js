@@ -118,6 +118,21 @@ try {
   /* no mirror — creates just get no title/persona */
 }
 
+// Accounts created here must carry the research-index slug when the name
+// matches a dossier (same resolution as trackerStore.watchContact) — the
+// draft engine loads data/accounts/{accountId}.json, so a slugified Groove
+// name that drifts from the dossier slug silently drops ALL research from
+// every draft for that account.
+let researchSlugByName = new Map()
+try {
+  const index = JSON.parse(await fs.readFile(path.join(paths.dataDir, 'index.json'), 'utf8'))
+  researchSlugByName = new Map(
+    (index.accounts ?? []).filter((a) => a.name && a.slug).map((a) => [a.name.toLowerCase(), a.slug])
+  )
+} catch {
+  /* no research index — fall through to slugified names */
+}
+
 console.log(`${path.basename(file)}: ${rows.length} due` + (DRY ? ' [DRY RUN]' : '') + ` | writes: ${useApi ? 'server API' : 'direct'}`)
 
 const targets = [] // [{row, contact}]
@@ -150,7 +165,7 @@ for (const r of rows) {
     const persona = title ? store.personaForTitle(title) : null
     let acctId = accountId
     if (!acctId) {
-      acctId = slugify(r.Account)
+      acctId = researchSlugByName.get(r.Account.toLowerCase()) ?? slugify(r.Account)
       if (DRY) console.log(`  + account ${r.Account} (${acctId})`)
       else await addAccount({ id: acctId, name: r.Account })
       accountByName.set(r.Account.toLowerCase(), acctId)

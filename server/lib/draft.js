@@ -91,11 +91,27 @@ async function loadPlaysLibrary() {
   }
 }
 
-async function loadDossier(slug) {
+async function readDossierFile(slug) {
   const file = path.join(paths.accountsDir, `${slug}.json`)
   if (path.dirname(path.resolve(file)) !== path.resolve(paths.accountsDir)) return null
   try {
     return await fs.readFile(file, 'utf8')
+  } catch {
+    return null
+  }
+}
+
+// Tracker account ids are supposed to be research-index slugs, but rows
+// created from Groove account names can drift (e.g. "spreedly" vs the
+// dossier's "spreedly-com") — without this fallback the draft silently
+// loses ALL research and writes from play + persona + stats alone.
+async function loadDossier(slug, accountName) {
+  const direct = await readDossierFile(slug)
+  if (direct || !accountName) return direct
+  try {
+    const index = JSON.parse(await fs.readFile(path.join(paths.dataDir, 'index.json'), 'utf8'))
+    const hit = (index.accounts ?? []).find((a) => a.name?.toLowerCase() === accountName.toLowerCase())
+    return hit?.slug ? await readDossierFile(hit.slug) : null
   } catch {
     return null
   }
@@ -189,7 +205,7 @@ export async function handleDraft(req, res) {
 
   const [plays, dossier, mirror, sentDrafts] = await Promise.all([
     loadPlaysLibrary(),
-    loadDossier(contact.accountId),
+    loadDossier(contact.accountId, account?.name),
     loadMirrorEntry(contact),
     loadDashboardSent(contactId),
   ])
