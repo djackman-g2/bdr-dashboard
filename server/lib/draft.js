@@ -16,6 +16,9 @@ import Anthropic from '@anthropic-ai/sdk'
 import { config, paths } from './config.js'
 import { getClient, invalidateClient, CHAT_MODEL, KEYCHAIN_SERVICE } from './chat.js'
 import { readStore } from './trackerStore.js'
+// Shared with the account page's Storyline card (GET /api/storyline/:accountId)
+// so the UI and the draft engine resolve the same file for an account.
+import { loadStoryline } from './storyline.js'
 import { personas } from '../../data/personas.js'
 
 const MODEL = config.draft?.model ?? CHAT_MODEL
@@ -209,9 +212,10 @@ export async function handleDraft(req, res) {
   if (!contact) return res.status(404).json({ error: 'no such contact' })
   const account = store.accounts.find((a) => a.id === contact.accountId) ?? null
 
-  const [plays, dossier, mirror, sentDrafts] = await Promise.all([
+  const [plays, dossier, storyline, mirror, sentDrafts] = await Promise.all([
     loadPlaysLibrary(),
     loadDossier(contact.accountId, account?.name),
+    loadStoryline(contact.accountId, account?.name),
     loadMirrorEntry(contact),
     loadDashboardSent(contactId),
   ])
@@ -280,6 +284,9 @@ export async function handleDraft(req, res) {
       ? [`SENT FROM THIS DASHBOARD (Declan marked these sent on the Due page — real outbound touches to THIS contact that the Groove mirror may not show yet; newest first, treat as part of the thread and never repeat their proof points): ${JSON.stringify(sentDrafts)}`]
       : []),
     dossier ? 'The account research dossier is provided in the system context.' : 'NO DOSSIER: this account is unresearched — play + persona + canonical stats only; no invented company facts.',
+    ...(storyline
+      ? ['A STORYLINE exists for this account — chapter discipline, claim gates, and pairings in storyline.md are binding for this draft.']
+      : []),
     kind === 'pack' ? PACK_CONTRACT : NEXT_CONTRACT,
   ].join('\n\n')
 
@@ -294,7 +301,7 @@ export async function handleDraft(req, res) {
   const send = (obj) => res.write(JSON.stringify(obj) + '\n')
 
   try {
-    const stream = anthropic.messages.stream({
+    const params = {
       model: MODEL,
       max_tokens: MAX_TOKENS,
       thinking: { type: 'adaptive' },
@@ -306,26 +313,54 @@ export async function handleDraft(req, res) {
         ...(dossier
           ? [{ type: 'text', text: `Account research dossier (JSON):\n${dossier}`, cache_control: { type: 'ephemeral' } }]
           : []),
+        ...(storyline
+          ? [{ type: 'text', text: `Account STORYLINE (data/plays/storyline.md governs how to use this):\n${storyline}`, cache_control: { type: 'ephemeral' } }]
+          : []),
         { type: 'text', text: `Today's date: ${new Date().toISOString().slice(0, 10)}` },
       ],
       messages: [{ role: 'user', content: userPayload }],
-    })
+    }
+    const textOf = (m) => m.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
+    // Only the first attempt streams: a retry's deltas would concatenate onto
+    // the first attempt's text in the panel and read as garbage.
+    const attempt = async ({ stream: streamDeltas }) => {
+      const s = anthropic.messages.stream(params)
+      if (streamDeltas) s.on('text', (delta) => send({ type: 'delta', text: delta }))
+      return s.finalMessage()
+    }
 
-    stream.on('text', (delta) => send({ type: 'delta', text: delta }))
-
-    const msg = await stream.finalMessage()
+    const msg = await attempt({ stream: true })
     if (msg.stop_reason === 'refusal') {
       send({ type: 'error', error: 'Claude declined to draft this request.' })
     } else {
-      const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
-      const draft = parseJson(text)
+      let text = textOf(msg)
+      let draft = parseJson(text)
+      const usage = { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens }
+      // One retry on unparseable output. Seen 2026-08-24: the model emitted a
+      // JS expression ("…".replace(…)) inside a JSON string value, which no
+      // amount of extraction can recover — a fresh attempt usually parses.
+      if (!draft) {
+        console.warn(`[draft] unparseable JSON for ${contactId} (${kind}) — retrying once`)
+        const retry = await attempt({ stream: false })
+        usage.input_tokens += retry.usage.input_tokens
+        usage.output_tokens += retry.usage.output_tokens
+        if (retry.stop_reason !== 'refusal') {
+          const retryText = textOf(retry)
+          const retryDraft = parseJson(retryText)
+          // Keep the retry's text as the fallback raw either way — it's the
+          // attempt whose result is being reported.
+          text = retryText
+          draft = retryDraft
+        }
+        console.warn(`[draft] retry ${draft ? 'parsed' : 'also failed — falling back to raw text'}`)
+      }
       send({
         type: 'done',
         contactId,
         kind,
         draft,
         ...(draft ? {} : { raw: text }),
-        usage: { input_tokens: msg.usage.input_tokens, output_tokens: msg.usage.output_tokens },
+        usage,
       })
     }
   } catch (err) {

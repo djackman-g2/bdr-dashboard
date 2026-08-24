@@ -18,6 +18,7 @@ import {
 } from './lib/queue.js'
 import { handleChat } from './lib/chat.js'
 import { handleDraft } from './lib/draft.js'
+import { handleStoryline } from './lib/storyline.js'
 import { startDueBatch, dueBatchStatus, markDueDraft } from './lib/dueBatch.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
 import { runCommunity } from './lib/community.js'
@@ -153,6 +154,11 @@ app.post('/api/chat', handleChat)
 // or next-step message). Same client as chat; grounded on dossier + plays +
 // the Groove mirror's touch history.
 app.post('/api/draft', handleDraft)
+
+// Storyline layer — read-only view of an account's narrative file (spine,
+// chapters, claims ledger, verification gate). Same loader the draft engine
+// uses, so the card and the draft can't disagree. Edits happen by hand.
+app.get('/api/storyline/:accountId', handleStoryline)
 
 // Send desk batch — the Due page uploads the Groove due-list CSV as text;
 // the server runs scripts/draft-due-csv.js (one next-step draft per row,

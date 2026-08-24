@@ -5,6 +5,7 @@ import ChatPanel from './ChatPanel.jsx'
 import AiVisibility from './AiVisibility.jsx'
 import Community from './Community.jsx'
 import SfActivity from './SfActivity.jsx'
+import Storyline from './Storyline.jsx'
 import { formatDate, formatDateTime, formatMoney, relativeTime } from '../lib/format.js'
 import { toBullets } from '../lib/prose.js'
 
@@ -254,6 +255,8 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
           <AiVisibility slug={a.slug} data={a.ai_visibility} serverUp={!!onRefresh} />
 
           <Community slug={a.slug} data={a.community} serverUp={!!onRefresh} />
+
+          <Storyline key={a.slug} slug={a.slug} serverUp={!!onRefresh} />
 
           <Section
             title={`ICP contacts (${a.icp_contacts?.length ?? 0})`}
