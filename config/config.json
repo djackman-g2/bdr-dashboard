@@ -1,7 +1,7 @@
 {
   "salesforce": {
     "bdr_user_id": "005Nw000003GH6PIAW",
-    "account_universe_where": "BDR__c = '005Nw000003GH6PIAW' AND Owner.Name IN ('Sean Mahoney','Nick Cantieri') AND Type = 'Vendor - Prospect' AND Is_Ultimate_Parent_Account__c = true",
+    "account_universe_where": "(BDR__c = '005Nw000003GH6PIAW' AND Owner.Name IN ('Sean Mahoney','Nick Cantieri') AND Type = 'Vendor - Prospect' AND Is_Ultimate_Parent_Account__c = true) OR Id IN ('001Nw00000H3OpBIAV','0012R0000273rgQQAQ','001Nw00000bn96jIAA','001440000245gR7AAI')",
     "account_fields": [
       "Id",
       "Name",
@@ -23,23 +23,48 @@
       "Profile_Completeness_Percent__c",
       "Total_Vendor_Reviews_Last_60_Days__c"
     ],
-    "notes": "FY27 universe (verified 289 accounts, 2026-07-21): BDR__c lookup, NOT OwnerId (returns 0) — plus AE-owner, prospect-type, and ultimate-parent filters. Non-ultimate-parent children and other-AE accounts (~163 pending reassignment) are excluded BY DESIGN; if the book shifts again, this WHERE clause is the single thing to edit. LastActivityDate contains future dates (2029-2036) — filter out any date > today before using for recency. 6sense/hierarchy fields feed nightly ranking only; 6sense values must NEVER appear in outreach copy."
+    "open_opportunity_where": "IsClosed = false",
+    "open_opportunity_fields": [
+      "Id",
+      "AccountId",
+      "Name",
+      "StageName",
+      "Amount",
+      "CloseDate",
+      "Owner.Name"
+    ],
+    "open_opportunity_notes": "Drives the open-opp exclusion (added 2026-08-18). An open opp = an AE's live deal, so the account is NOT a BDR prospecting target: the nightly stamps index.json `open_opps` from this query (refresh-all-light Step 2b), the workbench hides those rows behind a 'n hidden · open opp' toggle, and ranking drops them from candidacy entirely so no deep slot / ZoomInfo credit is spent on an account he can't contact. `IsClosed = false` is deliberate and load-bearing — Closed-Lost accounts MUST stay in the working list, because winback is an active playType. Owner is captured so the badge can name whose deal it is (Sean, Nick, or another AE entirely — Fiorano is Julianna Fuhr's); Declan's own name appearing as owner means an FVC he already booked, which is equally not-to-prospect. If the exclusion ever needs loosening, this WHERE clause is the single thing to edit.",
+    "notes": "FY27 universe (verified 289 accounts 2026-07-21; base query returned 386 on 2026-08-04 — book grew ~97, nightly will absorb them). Trailing `OR Id IN (...)` = manual includes for accounts not yet BDR__c-assigned: 001Nw00000H3OpBIAV = Tennr, 0012R0000273rgQQAQ = Viz.ai (added 2026-08-04), 001Nw00000bn96jIAA = Figure/figure.ai (added 2026-08-05) — all Sean's; 001440000245gR7AAI = Immuta/immuta.com (added 2026-08-26, Nick's, requested by hand) — remove from the IN list once SF ops sets BDR__c. NOT figure.com (FIGURE TECHNOLOGIES, Kyle Gould's). BDR__c lookup, NOT OwnerId (returns 0) — plus AE-owner, prospect-type, and ultimate-parent filters. Non-ultimate-parent children and other-AE accounts (~163 pending reassignment) are excluded BY DESIGN; if the book shifts again, this WHERE clause is the single thing to edit. LastActivityDate contains future dates (2029-2036) — filter out any date > today before using for recency. 6sense/hierarchy fields feed nightly ranking only; 6sense values must NEVER appear in outreach copy."
   },
   "refresh": {
     "nightly_light_cron": "15 8 * * *",
     "queue_concurrency": 1,
-    "deep_refresh_daily_cap": 10,
+    "deep_refresh_daily_cap": 2,
     "playwright_in_scheduled_runs": false,
     "auto_queue_deep": false,
     "catchup_after_hours": 26,
-    "job_timeout_minutes": { "light": 90, "deep": 45, "activity": 10, "section": 15, "outreach": 15 }
+    "job_timeout_minutes": {
+      "light": 90,
+      "deep": 45,
+      "activity": 10,
+      "section": 15,
+      "outreach": 15,
+      "brief": 20
+    },
+    "_comment": "Spend control (2026-09-03): every automatic pipeline run is OFF. nightly_light_enabled/catchup_enabled gate the cron + hourly catch-up in server/index.js; both were costing ~$15-19/day on a sweep that feeds nothing in the drafting path. The light run is now hand-invoked (npm run refresh:book) and should run about monthly — it is still the only thing that stamps index.json open_opps (integrity rule 13). deep_refresh_daily_cap is enforced server-side in enqueue(), not just by prompt wording.",
+    "nightly_light_enabled": false,
+    "catchup_enabled": false
   },
   "outreach": {
     "_comment": "Groove mirror. Groove is SF-native — its sends/calls land as Tasks owned by the BDR; the outreach mode reads that trail into data/outreach.json (free, SF-only). connect_dispositions are PREFIX matches against CallDisposition. sync_after_light: auto-queue a sync after every successful nightly/catch-up light run.",
     "window_days": 30,
     "body_max_chars": 1200,
-    "sync_after_light": true,
-    "connect_dispositions": ["Connect", "Referred to another person", "Hung up"]
+    "sync_after_light": false,
+    "connect_dispositions": [
+      "Connect",
+      "Referred to another person",
+      "Hung up"
+    ]
   },
   "linkedin": {
     "_comment": "Verification tool, never a scraper. Only deep runs with origin 'user' may use it (server hard-blocks Playwright otherwise). Caps are per run; a failed/skipped lookup marks the contact unconfirmed and never blocks the pipeline.",
@@ -47,6 +72,29 @@
     "max_page_loads_per_run": 8,
     "min_seconds_between_pages": 15,
     "profile_dir": "/Users/djackman/Library/Application Support/bdr-dashboard/chrome-profile"
+  },
+  "groove": {
+    "_comment": "Reverse-engineered internal API, NOT an official Groove integration — deliberate override of the prior 'never integrate with Groove' rule, confirmed 2026-08-10; see CLAUDE.md 'Groove CLI / Playwright constraints'. Auth: dedicated Playwright Chrome profile (separate from linkedin.profile_dir — never share them) mints short-lived session cookies for direct fetch() calls; profile must ONLY ever be opened through Playwright (mock-keychain cookie-destruction risk, same as the LinkedIn profile). endpoint_map is hand-curated from a network capture (server/scripts/groove-capture.js) — re-capture if Groove changes its UI, never hand-guess a path. Rate limits below are UNVERIFIED placeholders (Groove's bot-detection posture is undocumented) — tighten immediately on any 429/CAPTCHA/lockout signal and treat any such signal as a hard stop, never a retry. This CLI is human-invoked only and must never be added to the headless allowlist.",
+    "profile_dir": "/Users/djackman/Library/Application Support/bdr-dashboard/groove-chrome-profile",
+    "base_url": "https://groove.clari.com/",
+    "api_base_url": "https://engine.groove.clari.com",
+    "endpoint_map": "data/groove/endpoint-map.json",
+    "session_cache": "data/groove/session-cache.json",
+    "session_ttl_minutes": 30,
+    "max_writes_per_run": 15,
+    "max_writes_per_day": 60,
+    "min_seconds_between_writes": 3,
+    "morning": {
+      "_comment": "Morning due-pull → draft (server/lib/morningPull.js). DISABLED 2026-09-11 (Declan's ruling): no cron-triggered spend at all — if it costs anything, a human decides to run it. `enabled:false` gates the cron/boot/hourly-catchup call sites in index.js (all call runMorningPull without force); it does NOT gate the manual path — POST /api/morning {\"force\":true} always runs regardless of `enabled`, which is now the ONLY way this fires. READ-ONLY Groove only (three GETs per flow, nothing against the write limits) per Declan's 2026-08-25 ruling that narrowed the human-invoked-only rule to WRITES — that part is unchanged. flows: 1483166 = 'BDR 2 FY27'; 1571660 ('Claude Agent Flow Calls + Linkedin') deliberately excluded (2026-09-11 ruling — calls/LinkedIn are out of scope, email-only).",
+      "enabled": false,
+      "cron": "0 7 * * 1-5",
+      "flows": [
+        1483166
+      ],
+      "earliest_hour": 6,
+      "latest_hour": 20,
+      "limit": null
+    }
   },
   "news": {
     "use_apify": false,
@@ -56,14 +104,32 @@
   "zoominfo": {
     "log_every_paid_call": true,
     "max_section_contact_enrich": 5,
-    "paid_tools": ["account_research", "enrich_contacts", "contact_research", "enrich_companies"]
+    "paid_tools": [
+      "account_research",
+      "enrich_contacts",
+      "contact_research",
+      "enrich_companies"
+    ]
   },
   "ai_visibility": {
     "_comment": "7G-1 AEO module. Server-side runner (reuses the chat client/proxy/Keychain key) — 2-3 small completions per account, no MCPs. run_after_deep: server auto-runs it after every successful deep refresh. 6sense never feeds these prompts; queries are built from g2/firmographics categories only.",
     "model": null,
     "max_tokens": 1200,
     "max_excerpt_chars": 2000,
-    "run_after_deep": true
+    "run_after_deep": false,
+    "run_after_brief": false
+  },
+  "storyline": {
+    "_comment": "Auto-storyline builder (2026-09-01). One direct LLM call after a successful deep refresh (server, no MCPs — same client as ai_visibility/community) when the account has no existing storyline.json and has >= min_contacts_for_auto_build icp_contacts. Never overwrites an existing storyline, hand-authored or auto-built. Defaults new storylines to mode 'template_flow' (lighter touch than full_custom). Output carries generated_by/reviewed:false; verification[] pending items still surface as a pre-send banner on the Storyline card same as a hand-authored file.",
+    "model": null,
+    "max_tokens": 12000,
+    "min_contacts_for_auto_build": 3,
+    "auto_build_after_deep": false,
+    "auto_build_after_brief": false
+  },
+  "tracker": {
+    "_comment": "Day-tab signals tuning. double_tap_after_days: how long a mid-Groove-flow contact can go with no reply before scanSignals (server/lib/plays.js) surfaces them as a double-tap candidate.",
+    "double_tap_after_days": 5
   },
   "community": {
     "_comment": "UGC/community-chatter module (feeds the ugc-narrative play). Server-side runner: Reddit official API + HN Algolia + one LLM relevance pass via the chat client. Reddit creds live ONLY in the macOS Keychain as client_id:client_secret — add with: security add-generic-password -U -a \"$USER\" -s bdr-dashboard-reddit -w \"<client_id>:<client_secret>\" (script app from reddit.com/prefs/apps). No creds = Reddit skipped, HN still runs.",
@@ -77,7 +143,7 @@
   "chat": {
     "_comment": "Phase 6 account chat. Direct Anthropic API (or a LiteLLM proxy via base_url — must expose the Anthropic /v1/messages surface), no MCPs. Key lives ONLY in the macOS Keychain under keychain_service — add it with: security add-generic-password -U -a \"$USER\" -s bdr-dashboard-anthropic -w",
     "base_url": "https://llmproxy.g2.com",
-    "model": "claude-opus-4-8",
+    "model": "claude-sonnet-5",
     "max_tokens": 16000,
     "max_history_messages": 40,
     "keychain_service": "bdr-dashboard-anthropic"
@@ -97,5 +163,17 @@
     "meta": "data/meta.json",
     "schema": "schema/account.schema.json",
     "logs_dir": "logs"
+  },
+  "brief": {
+    "_comment": "Cheap replacement for deep research (2026-09-03). Sonnet, sequential (NO Task subagents - that fan-out is what made deep ~$7.50/run), free tools only, ZoomInfo hard-blocked by the server. Refreshes only the dossier sections the draft engine actually cites: g2, news, hiring, salesforce, signals, icp_contacts (free search only). ai_visibility runs after it via ai_visibility.run_after_brief. Est. $0.30-0.60/account. Full deep is still available by hand for accounts that earn it.",
+    "max_news_items": 3,
+    "max_new_contacts": 8
+  },
+  "draft": {
+    "_comment": "Draft engine knobs (added 2026-09-03). max_tokens_next is a TAIL GUARD, not a cost lever — measured 2026-09-03: at 3000 it truncated 4 of 6 next-drafts mid-JSON, each of which then paid for a full retry, making drafts MORE expensive ($0.097 vs $0.078 baseline). Natural next-draft output is ~2,200-3,000 tokens (adaptive thinking at effort medium, plus the rationale/flag_warnings/scorecard contract), so the cap has to clear that with room. 8000 bounds the pathological tail without truncating normal work. Packs keep 16000 (8000 truncated them mid-JSON when it was tried). Do NOT drop effort to low for next drafts — tried 2026-08-12, regressed the gates self-scorecard and per-account angle diversity. The real draft savings are on the INPUT side: account-grouped batching so the dossier cache breakpoint hits, and slimDossier() in draft.js.",
+    "model": null,
+    "max_tokens_next": 8000,
+    "max_tokens_pack": 16000,
+    "slim_dossier": true
   }
 }
