@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "storyline.schema.json",
+  "title": "Account storyline layer",
+  "description": "One file per account at data/accounts/{research-index-slug}.storyline.json. Loose/permissive by design: this validates ONLY the auto-storyline-builder's own output before writing it (server/lib/storylineBuilder.js) — it is never applied to the pre-existing hand-authored files, which the draft engine and the Storyline card read as raw text/JSON regardless of shape. additionalProperties stays true throughout so a hand-authored file with extra fields (e.g. voice_reference_e1s) is never a validation target and never breaks if reused as a base.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["account", "slug", "mode", "spine", "cast"],
+  "properties": {
+    "account": { "type": "string" },
+    "slug": { "type": "string" },
+    "sf_account_id": { "type": ["string", "null"] },
+    "ae_owner": { "type": ["string", "null"] },
+    "mode": { "type": "string", "enum": ["full_custom", "template_flow"] },
+    "created": { "type": "string" },
+    "source_session": { "type": "string" },
+    "generated_by": { "type": "string" },
+    "reviewed": { "type": "boolean" },
+    "spine": { "type": "string", "minLength": 1 },
+    "facts": { "type": "object", "additionalProperties": true },
+    "cast": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["contact", "persona", "chapter", "chapter_angle"],
+        "properties": {
+          "contact": { "type": "string" },
+          "title": { "type": ["string", "null"] },
+          "email": { "type": ["string", "null"] },
+          "sf_contact_id": { "type": ["string", "null"] },
+          "persona": { "type": "string" },
+          "chapter": { "type": "string" },
+          "chapter_angle": { "type": "string" },
+          "withheld_specific": { "type": ["string", "null"] },
+          "cta_rule": { "type": ["string", "null"] },
+          "notes": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "pairings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "cites": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "claims_ledger": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["colleague", "state", "allowed"],
+        "properties": {
+          "colleague": { "type": "string" },
+          "state": {
+            "type": "string",
+            "enum": ["sent", "replied", "meeting", "ae_thread_active"]
+          },
+          "evidence": { "type": ["string", "null"] },
+          "allowed": { "type": "string" },
+          "requires": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["item", "status"],
+        "properties": {
+          "item": { "type": "string" },
+          "status": { "type": "string", "enum": ["pending", "cleared", "failed"] },
+          "fallback": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

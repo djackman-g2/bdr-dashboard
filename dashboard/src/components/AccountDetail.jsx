@@ -185,9 +185,17 @@ export default function AccountDetail({ account, activity, onBack, onRefresh, re
                 LinkedIn verify
               </label>
               <button
+                onClick={() => onRefresh('brief')}
+                disabled={refreshPending}
+                title="Cheap research: G2, news, hiring, CRM history and free contact discovery. No ZoomInfo credits, no LinkedIn, no deep-cap slot. Use this by default — deep costs roughly 15x more."
+                className="rounded-md border border-zinc-300 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 disabled:cursor-default disabled:opacity-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                {refreshPending ? '⟳ queued…' : '⟳ Brief'}
+              </button>
+              <button
                 onClick={() => onRefresh('deep', { linkedin })}
                 disabled={refreshPending}
-                title="Full pipeline: enrichment, news, contacts, messaging (uses ZoomInfo credits; daily cap applies)"
+                title="Full pipeline: enrichment, news, contacts, messaging (uses ZoomInfo credits; daily cap of 2/day applies). Prefer Brief unless this account needs paid verification."
                 className="rounded-md bg-brand-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-600 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-brand-500"
               >
                 {refreshPending ? '⟳ refresh queued…' : '⟳ Deep refresh'}

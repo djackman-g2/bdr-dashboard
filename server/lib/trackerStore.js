@@ -6,12 +6,16 @@
 // so every write broadcasts an SSE "data" event to the dashboard for free.
 //
 // Collections:
-//   activities[]: { id, ts, type, contactId?, outcome? }
+//   activities[]: { id, ts, type, contactId? }
 //   contacts[]:   { id, name?, title?, accountId, persona, step, lastTouch,
-//                   nextAction, nextDate, hook, status, watch, notes }   (Module 2)
+//                   nextAction, nextDate, hook, status, watch, notes,
+//                   connected }   (Module 2)
 //   watch/notes power the #/activity watchlist (mini-CRM for hand-picked
-//   contacts — out-of-flow moves and anything Groove doesn't hold).
-//   accounts[]:   { id, name, g2Slug?, sfId?, threadIds[], playType, flags[] } (Module 2)
+//   contacts — out-of-flow moves and anything Groove doesn't hold). connected
+//   (LinkedIn) flips draft.js's InMail play to a voice-note/video ask.
+//   accounts[]:   { id, name, g2Slug?, sfId?, threadIds[], playType, flags[],
+//                   signalSeen[] } (Module 2) — signalSeen is acknowledged
+//   Day-tab signal fingerprints, see plays.js scanSignals.
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -21,7 +25,6 @@ import { personas } from '../../data/personas.js'
 const FILE = path.join(paths.dataDir, 'tracker.json')
 
 export const ACTIVITY_TYPES = ['call', 'email', 'linkedin', 'video', 'inmail', 'reply', 'meeting']
-export const CALL_OUTCOMES = ['connect', 'vm', 'no-answer', 'gatekeeper']
 export const PLAY_TYPES = ['AEO', 'buyer-intent', 'winback', 'top-down']
 export const CONTACT_STATUSES = ['to-find', 'active', 'replied', 'meeting', 'dead']
 export const PERSONA_KEYS = Object.keys(personas)
@@ -40,13 +43,21 @@ const PERSONA_MATCH_ORDER = [
   'marketing',
 ].filter((k) => PERSONA_KEYS.includes(k))
 
+// Punctuation is collapsed to single spaces on BOTH the title and the needle
+// before matching: Groove writes titles comma-style ("Vice President,
+// Marketing") while personas.js lists them space-style ("VP Marketing"), so a
+// raw substring test missed every comma'd VP title and left the contact with
+// no persona at all.
+const normalizeTitle = (s) =>
+  s.toLowerCase().replace(/vice president/g, 'vp').replace(/[^a-z0-9]+/g, ' ').trim()
+
 export function personaForTitle(title) {
   if (!title) return null
   // "Vice President, Revenue Marketing" must not hit executive's "President".
-  const t = title.toLowerCase().replace(/vice president/g, 'vp')
+  const t = normalizeTitle(title)
   for (const key of [...PERSONA_MATCH_ORDER, ...PERSONA_KEYS.filter((k) => !PERSONA_MATCH_ORDER.includes(k))]) {
     for (const raw of personas[key].titles) {
-      const needle = raw.toLowerCase()
+      const needle = normalizeTitle(raw)
       if (needle.length <= 3 ? new RegExp(`\\b${needle}\\b`).test(t) : t.includes(needle)) return key
     }
   }
@@ -55,25 +66,13 @@ export function personaForTitle(title) {
 
 const badInput = (msg) => Object.assign(new Error(msg), { code: 'bad-input' })
 
-// Daily goals. calls/emails have a floor (the real bar) and a stretch —
-// a 55 reads as "above floor", never "missed stretch". Others are stretch-only.
-// Seeded into tracker.json on first run; edit the file to change them.
-const DEFAULT_GOALS = {
-  call: { floor: 50, stretch: 60 },
-  email: { floor: 50, stretch: 60 },
-  linkedin: { stretch: 10 },
-  video: { stretch: 5 },
-  inmail: { stretch: 5 },
-}
-
-const EMPTY = () => ({ goals: DEFAULT_GOALS, activities: [], contacts: [], accounts: [] })
+const EMPTY = () => ({ activities: [], contacts: [], accounts: [] })
 
 let chain = Promise.resolve()
 
 export async function readStore() {
   try {
     const store = JSON.parse(await fs.readFile(FILE, 'utf8'))
-    store.goals ??= DEFAULT_GOALS
     store.activities ??= []
     store.contacts ??= []
     store.accounts ??= []
@@ -103,18 +102,14 @@ export function updateStore(mutate) {
 // keeps every activity row so trends stay recomputable.
 export const localDay = (ts) => new Date(ts).toLocaleDateString('en-CA')
 
-export async function logActivity({ type, outcome, contactId }) {
+export async function logActivity({ type, contactId }) {
   if (!ACTIVITY_TYPES.includes(type)) {
     throw badInput(`type must be one of: ${ACTIVITY_TYPES.join(', ')}`)
-  }
-  if (outcome !== undefined && (type !== 'call' || !CALL_OUTCOMES.includes(outcome))) {
-    throw badInput(`outcome is calls-only, one of: ${CALL_OUTCOMES.join(', ')}`)
   }
   const activity = {
     id: randomUUID(),
     ts: new Date().toISOString(),
     type,
-    ...(outcome ? { outcome } : {}),
     ...(contactId ? { contactId } : {}),
   }
   await updateStore((store) => {
@@ -152,6 +147,12 @@ function validateAccountPatch(patch) {
   if (patch.flags !== undefined && !(Array.isArray(patch.flags) && patch.flags.every((f) => typeof f === 'string'))) {
     throw badInput('flags must be an array of strings')
   }
+  if (patch.aeOwner !== undefined && patch.aeOwner !== null && typeof patch.aeOwner !== 'string') {
+    throw badInput('aeOwner must be a string or null')
+  }
+  if (patch.signalSeen !== undefined && !(Array.isArray(patch.signalSeen) && patch.signalSeen.every((f) => typeof f === 'string'))) {
+    throw badInput('signalSeen must be an array of strings')
+  }
 }
 
 export async function addAccount({ id, name, sfId, g2Slug, playType, flags }) {
@@ -166,6 +167,7 @@ export async function addAccount({ id, name, sfId, g2Slug, playType, flags }) {
     sfId: sfId ?? null,
     playType: playType ?? null,
     flags: flags ?? [],
+    signalSeen: [], // acknowledged Day-tab signal fingerprints — see plays.js scanSignals
   }
   let existed = false
   await updateStore((store) => {
@@ -176,7 +178,7 @@ export async function addAccount({ id, name, sfId, g2Slug, playType, flags }) {
 }
 
 export async function patchAccount(id, patch) {
-  const allowed = ['name', 'g2Slug', 'sfId', 'playType', 'flags']
+  const allowed = ['name', 'g2Slug', 'sfId', 'playType', 'flags', 'aeOwner', 'signalSeen']
   const clean = Object.fromEntries(Object.entries(patch ?? {}).filter(([k]) => allowed.includes(k)))
   validateAccountPatch(clean)
   if (clean.name !== undefined && (typeof clean.name !== 'string' || !clean.name.trim())) {
@@ -244,6 +246,7 @@ export async function addContact({ accountId, persona, name, title, hook, nextAc
     status: status ?? (name?.trim() ? 'active' : 'to-find'),
     watch: Boolean(watch),
     notes: notes?.trim() || null,
+    connected: false, // LinkedIn-connected — draft.js swaps the InMail play for a voice-note/video ask
   }
   validateContactFields(contact, { forStep: contact.step, forHook: contact.hook })
   await updateStore((store) => {
@@ -256,7 +259,7 @@ export async function addContact({ accountId, persona, name, title, hook, nextAc
 }
 
 export async function patchContact(id, patch) {
-  const allowed = ['name', 'title', 'persona', 'step', 'hook', 'nextAction', 'nextDate', 'status', 'lastTouch', 'sfContactId', 'email', 'watch', 'notes']
+  const allowed = ['name', 'title', 'persona', 'step', 'hook', 'nextAction', 'nextDate', 'status', 'lastTouch', 'sfContactId', 'email', 'watch', 'notes', 'connected']
   const clean = Object.fromEntries(Object.entries(patch ?? {}).filter(([k]) => allowed.includes(k)))
   let contact = null
   await updateStore((store) => {
@@ -269,6 +272,7 @@ export async function patchContact(id, patch) {
     // Naming a to-find row makes it a live target unless the patch says otherwise.
     if (clean.name && contact.status === 'to-find' && clean.status === undefined) clean.status = 'active'
     if ('watch' in clean) clean.watch = Boolean(clean.watch)
+    if ('connected' in clean) clean.connected = Boolean(clean.connected)
     if ('notes' in clean) clean.notes = (typeof clean.notes === 'string' && clean.notes.trim()) || null
     Object.assign(contact, clean)
     if (contact.hook == null) contact.hook = ''
@@ -349,26 +353,16 @@ export async function watchContact({ contactId, sfContactId }) {
   })
 }
 
-// Everything the dashboard needs in one GET: goals + today's raw rows (small —
-// pace/connect-rate math stays client-side where "now" lives) + per-day
-// aggregates for the trend view.
-export function summarize(store, days = 14) {
+// Everything the dashboard needs in one GET: today's raw activity rows +
+// per-type counts (Groove is the system of record for activity stats — this
+// is just today's tally for the quick-log bar, not a trend/goal store).
+export function summarize(store) {
   const today = localDay(Date.now())
-  const byDay = new Map()
+  const counts = {}
   for (const a of store.activities) {
-    const day = localDay(a.ts)
-    let d = byDay.get(day)
-    if (!d) byDay.set(day, (d = { date: day, counts: {}, outcome_calls: 0, connects: 0 }))
-    d.counts[a.type] = (d.counts[a.type] ?? 0) + 1
-    if (a.type === 'call' && a.outcome) {
-      d.outcome_calls += 1
-      if (a.outcome === 'connect') d.connects += 1
-    }
+    if (localDay(a.ts) !== today) continue
+    counts[a.type] = (counts[a.type] ?? 0) + 1
   }
-  const history = [...byDay.values()]
-    .filter((d) => d.date !== today)
-    .sort((a, b) => (a.date < b.date ? 1 : -1))
-    .slice(0, days)
   // Live threads per account = named contacts actually in motion. Computed,
   // not stored, so the single-threaded warning can never go stale.
   const threadIds = new Map()
@@ -390,9 +384,7 @@ export function summarize(store, days = 14) {
   }
 
   return {
-    goals: store.goals,
     types: ACTIVITY_TYPES,
-    outcomes: CALL_OUTCOMES,
     personas,
     play_types: PLAY_TYPES,
     contact_statuses: CONTACT_STATUSES,
@@ -401,9 +393,8 @@ export function summarize(store, days = 14) {
     today: {
       date: today,
       activities: store.activities.filter((a) => localDay(a.ts) === today),
-      ...(byDay.get(today) ?? { counts: {}, outcome_calls: 0, connects: 0 }),
+      counts,
       spread,
     },
-    history,
   }
 }

@@ -1,0 +1,5 @@
+{
+  "_comment": "Groove account name -> research-index slug. Hand-curated ONLY (server/lib/accountSlug.js deliberately does no fuzzy matching). Add a row when a Groove account name drifts from the index name and the draft engine reports it as unresolved. Verify the two names are the SAME company before adding one - binding the wrong dossier to a person is worse than binding none.",
+  "Kibo": "kibocommerce-com",
+  "Configit Quote": "configit-com"
+}

@@ -10,7 +10,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { config, paths } from './config.js'
 
 const chatConfig = config.chat ?? {}
-const MODEL = chatConfig.model ?? 'claude-opus-4-8'
+const MODEL = chatConfig.model ?? 'claude-sonnet-5'
 const MAX_TOKENS = chatConfig.max_tokens ?? 16000
 const KEYCHAIN_SERVICE = chatConfig.keychain_service ?? 'bdr-dashboard-anthropic'
 const MAX_HISTORY = chatConfig.max_history_messages ?? 40

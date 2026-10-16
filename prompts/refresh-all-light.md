@@ -25,22 +25,35 @@ The pull now includes 6sense + hierarchy fields (`X6sense_*`, `*_SOM__c`, etc.).
 
 Resolve each SF Account's canonical domain from `Website` (strip scheme/www, lowercase; no website → slug from name, note it). Then:
 
-- **New** (in SF, not in index): upsert an index stub `{slug, domain, name, industry, employees_display: null, confidence: "none", refreshed_at: null, top_signal: null, status: "pending_research"}`.
+- **New** (in SF, not in index): upsert an index stub `{slug, domain, name, industry, employees_display: null, confidence: "none", refreshed_at: null, top_signal: null, status: "pending_research", open_opps: []}` (Step 2b fills `open_opps` immediately after).
 - **Removed** (in index, not in SF): set `status: "archived"` + `archived_at` in the index entry, and set the same in the account JSON if one exists. **Never delete account files.**
 - **Existing**: update `name`/`industry` in the index if SF changed them.
 
+## Step 2b — Stamp open opportunities onto the index (2026-08-18)
+
+One `soqlQuery`: select `config.salesforce.open_opportunity_fields` `FROM Opportunity WHERE <config.salesforce.open_opportunity_where> AND AccountId IN (<universe ids>)`. Do not hardcode the clause here — it lives in config so the rule is editable in one place (`open_opportunity_notes` explains why `IsClosed = false` is load-bearing).
+
+Set `open_opps` on **every** index entry — `[{name, stage, amount, close_date, owner}]`, or `[]` for accounts with none. Always write the field even when empty: an absent `open_opps` is indistinguishable from "never checked", and the dashboard treats absent as unknown rather than clear. Also mirror the same list into `salesforce.open_opportunities` on any account JSON that exists (that field already uses this shape).
+
+`IsClosed = false` is the whole test. **Closed-Lost accounts deliberately stay in the working list** — winback is an active `playType`, so a lost deal is a reason to reach out, not a reason to hide.
+
+Why this exists: an open opportunity means the account has an AE's live deal in it. Declan must not prospect into those — it steps on Sean or Nick. This field is what lets the workbench, the picks panel, and the ranking below all honor that from one source.
+
 ## Step 3 — Rank deep-research candidates (queueing is config-gated)
 
-Candidates: every index entry with `status: "pending_research"` — NOT just accounts new this run. (Cap-deferred accounts from earlier runs stay `pending_research` until a deep run completes; this step is their retry mechanism.)
+Candidates: every index entry with `status: "pending_research"` **and an empty `open_opps`** — NOT just accounts new this run. (Cap-deferred accounts from earlier runs stay `pending_research` until a deep run completes; this step is their retry mechanism.)
+
+Accounts with an open opp are **excluded from candidacy entirely** (changed 2026-08-18 — see Step 2b). They are not ranked, not suggested, and never deep-researched: he cannot contact them, so spending a ZoomInfo deep slot on one is pure credit burn. Note the count of accounts skipped this way in the run entry `notes`.
 
 Rank candidates. All ranking signals must be free — tiers 2–4 use the 6sense fields already in the Step 1 universe pull (zero extra calls); tier 1 is one extra SOQL. Do NOT use G2 `browse_buyer_intent` for ranking (removed 2026-07-21: confirmed tenant-scoped, returns the same companies for every product — see the CLAUDE.md connector table):
 
-1. **Open opportunity** (`open_opp`) — one `soqlQuery`: open Opportunities (`IsClosed = false`) across the universe, grouped by AccountId. Any candidate with an open opp ranks first (largest amount first within the tier).
-2. **6sense Buying Stage Purchase, then Decision** (`stage_purchase` / `stage_decision`) — `X6sense_Account_Buying_Stage__c = 'Purchase'` first, then `'Decision'`; within each stage, intent score descending.
-3. **6sense intent score** (`intent_6sense`) — remaining candidates with a nonzero `X6sense_Account_Intent_Score__c`, descending; 6QA-flagged accounts (`X6sense_6QA__c = true`) first within equal scores.
-4. **Consideration stage** (`consideration_som`) — `Buying Stage = 'Consideration'`, ordered by `Available_SOM__c` descending.
-5. **Recent real CRM activity** (`recent_activity`) — `LastActivityDate` within the last 90 days AND `<= today` (this org has future-dated values — discard any date > today, per config notes).
-6. **Everything else** (`alphabetical`) — alphabetical by domain.
+1. **6sense Buying Stage Purchase, then Decision** (`stage_purchase` / `stage_decision`) — `X6sense_Account_Buying_Stage__c = 'Purchase'` first, then `'Decision'`; within each stage, intent score descending.
+2. **6sense intent score** (`intent_6sense`) — remaining candidates with a nonzero `X6sense_Account_Intent_Score__c`, descending; 6QA-flagged accounts (`X6sense_6QA__c = true`) first within equal scores.
+3. **Consideration stage** (`consideration_som`) — `Buying Stage = 'Consideration'`, ordered by `Available_SOM__c` descending.
+4. **Recent real CRM activity** (`recent_activity`) — `LastActivityDate` within the last 90 days AND `<= today` (this org has future-dated values — discard any date > today, per config notes).
+5. **Everything else** (`alphabetical`) — alphabetical by domain.
+
+(There is no longer an `open_opp` tier. It was demoted to last on 2026-08-13, then removed outright on 2026-08-18 — demotion still let open-opp accounts fill leftover top-10 slots, which put untouchable accounts in front of him. They are now filtered out before ranking begins, in Step 3's candidate definition.)
 
 Reasons must carry the number that ranked the account, e.g. `"6sense intent 78, stage Decision"`, `"Consideration, available SOM $250k"`. 6sense values rank who to work — they NEVER appear in outreach copy (data-integrity rule).
 
@@ -48,7 +61,7 @@ Then check `config.refresh.auto_queue_deep`:
 
 - **`false` (current default — the user hand-picks their daily accounts):** queue NOTHING. Instead:
   1. Write `data/suggestions.json` (the dashboard renders it as the "Today's picks" panel):
-     `{"generated_at": "<ISO>", "pending_total": <n>, "suggestions": [{"slug": "...", "domain": "...", "name": "...", "tier": "open_opp"|"stage_purchase"|"stage_decision"|"intent_6sense"|"consideration_som"|"recent_activity"|"alphabetical", "reason": "<one line carrying the ranking number, e.g. 'open opp $18k (Madwire - FVC, closes 2026-08-20)' or '6sense intent 78, stage Decision'>"}]}` — top 10, rank order.
+     `{"generated_at": "<ISO>", "pending_total": <n>, "open_opp_skipped": <n>, "suggestions": [{"slug": "...", "domain": "...", "name": "...", "tier": "stage_purchase"|"stage_decision"|"intent_6sense"|"consideration_som"|"recent_activity"|"alphabetical", "reason": "<one line carrying the ranking number, e.g. '6sense intent 78, stage Decision' or 'Consideration, available SOM $250k'>"}]}` — top 10, rank order.
   2. Also add a short `notes` line to the run entry: `"deep suggestions written to data/suggestions.json (top: <first 3 domains>); <n> still pending"`.
 - **`true`:** POST sequentially in rank order (queue and caps live in the server — do not research inline):
 

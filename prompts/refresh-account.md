@@ -94,7 +94,7 @@ From verified facts only: 2-4 angles (each with `grounded_in` pointing at a spec
 1. Build the account JSON. Set `confidence` honestly (missing sources or unverified key facts → medium/low).
 2. Validate against `schema/account.schema.json`: `npx --yes -p ajv-cli@5 -p ajv-formats ajv validate -c ajv-formats --spec=draft7 -s schema/account.schema.json -d data/accounts/{slug}.json`. Fix violations before writing.
 3. Write `data/accounts/{slug}.json` (atomic: write temp file, then rename).
-4. Update `data/index.json`: upsert `{slug, domain, name, industry, employees_display, confidence, refreshed_at, top_signal, status: "active"}` — always set `status` (a completed deep refresh moves the account out of `pending_research`; omitting the field breaks dashboard status filters).
+4. Update `data/index.json`: upsert `{slug, domain, name, industry, employees_display, confidence, refreshed_at, top_signal, status: "active", open_opps}` — always set `status` (a completed deep refresh moves the account out of `pending_research`; omitting the field breaks dashboard status filters). Set `open_opps` from this run's `salesforce.open_opportunities` (`[{name, stage, amount, close_date, owner}]`, `[]` if none) — **never drop the field on upsert**: the workbench hides open-opp accounts, and an absent value reads as "unknown", which would put an AE's live deal back in the prospecting list.
 5. Finalize the run entry in `data/meta.json`: `finished`, accounts touched, credit-consuming calls made, errors.
 
 ## Source discipline (applies to every step)

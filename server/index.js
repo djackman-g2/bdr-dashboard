@@ -20,6 +20,7 @@ import { handleChat } from './lib/chat.js'
 import { handleDraft } from './lib/draft.js'
 import { handleStoryline } from './lib/storyline.js'
 import { startDueBatch, dueBatchStatus, markDueDraft } from './lib/dueBatch.js'
+import { runMorningPull, morningStatus, initMorningPull } from './lib/morningPull.js'
 import { runAiVisibility } from './lib/aiVisibility.js'
 import { runCommunity } from './lib/community.js'
 import { trackerRouter } from './lib/tracker.js'
@@ -97,8 +98,8 @@ app.post('/api/refresh', async (req, res) => {
   if (typeof query !== 'string' || !query.trim() || query.length > 200) {
     return res.status(400).json({ error: 'query must be a non-empty string (domain, name, SF Id, or "ALL")' })
   }
-  if (!['light', 'deep', 'activity', 'section', 'outreach'].includes(mode)) {
-    return res.status(400).json({ error: 'mode must be "light", "deep", "activity", "section", or "outreach"' })
+  if (!['light', 'deep', 'brief', 'activity', 'section', 'outreach'].includes(mode)) {
+    return res.status(400).json({ error: 'mode must be "light", "deep", "brief", "activity", "section", or "outreach"' })
   }
   if (query.trim() === 'ALL' && mode !== 'light' && mode !== 'outreach') {
     return res.status(400).json({ error: `${mode} refresh is per-account only — no ${mode} ALL` })
@@ -190,6 +191,15 @@ app.post('/api/draft-due', express.text({ type: '*/*', limit: '2mb' }), async (r
 })
 
 app.get('/api/draft-due', async (_req, res) => res.json(await dueBatchStatus()))
+
+// Morning pull: status, plus a manual kick for "run it now, I just logged in".
+// force:true bypasses the once-a-day guard and the working-hours window —
+// it is a human asking, which is exactly what the rule still allows.
+app.get('/api/morning', (_req, res) => res.json(morningStatus()))
+app.post('/api/morning', async (req, res) => {
+  const result = await runMorningPull({ trigger: 'manual', force: Boolean(req.body?.force) })
+  res.status(result.ok === false ? 502 : 200).json({ ...result, status: morningStatus() })
+})
 
 // One-tap "sent" on a due draft: stamps sentAt in the day file (the Due page
 // hides done cards), logs the matching tracker activity, and the saved body
@@ -289,8 +299,16 @@ app.get(/^\/(?!api\/|data\/).*/, (_req, res) => {
 })
 
 // ---------- Cron ----------
+// Spend control (2026-09-03): the nightly ALL/light sweep is OFF by default.
+// It cost ~$10-12 a night on 559 accounts and feeds nothing in the drafting
+// path — but it is still the only thing that stamps index.json open_opps
+// (integrity rule 13), so it lives on as a hand-invoked run: npm run
+// refresh:book, or the dashboard control. Flip nightly_light_enabled to
+// bring the schedule back.
 const cronExpr = config.refresh.nightly_light_cron
-if (cron.validate(cronExpr)) {
+if (config.refresh.nightly_light_enabled !== true) {
+  console.log('[cron] nightly light refresh DISABLED (refresh.nightly_light_enabled) — run it by hand: npm run refresh:book')
+} else if (cron.validate(cronExpr)) {
   cron.schedule(cronExpr, () => {
     enqueue({ query: 'ALL', mode: 'light', trigger: 'cron-nightly', origin: 'auto' }).then((r) => {
       if (r.error) console.error(`[cron] nightly light refresh not queued: ${r.error}`)
@@ -300,6 +318,25 @@ if (cron.validate(cronExpr)) {
   console.log(`[cron] nightly light refresh scheduled: "${cronExpr}"`)
 } else {
   console.error(`[cron] INVALID expression in config: "${cronExpr}" — nightly refresh DISABLED`)
+}
+
+// ---------- Morning Groove pull → drafts ----------
+// Read-only Groove, per the 2026-08-25 narrowing of the human-invoked-only
+// rule (writes are still terminal-only). Same belt-and-braces shape as the
+// nightly: a cron for the normal case, plus boot + hourly checks so a laptop
+// that was asleep at 7am still gets its drafts when the lid opens. The job is
+// idempotent per calendar day, so all three paths racing is harmless.
+const morningCron = config.groove?.morning?.cron
+if (config.groove?.morning?.enabled) {
+  if (morningCron && cron.validate(morningCron)) {
+    cron.schedule(morningCron, () => {
+      runMorningPull({ trigger: 'cron-morning' })
+    })
+    console.log(`[cron] morning Groove due-pull scheduled: "${morningCron}"`)
+  } else {
+    console.error(`[cron] INVALID groove.morning.cron: "${morningCron}" — relying on boot/hourly catch-up only`)
+  }
+  setInterval(() => runMorningPull({ trigger: 'catchup-hourly' }), 3_600_000)
 }
 
 // ---------- Nightly catch-up ----------
@@ -312,6 +349,16 @@ async function catchupCheck() {
   const hours = config.refresh.catchup_after_hours ?? 26
   try {
     const meta = await readMeta()
+    // finishJob deliberately does not advance last_light_refresh_at on a FATAL
+    // run, so a nightly that fails for a standing reason (dead MCP auth, a
+    // changed SOQL shape) used to re-spawn a 90-minute pipeline EVERY HOUR --
+    // 8 back-to-back runs on 2026-08-22/23, 39 recorded failures in total.
+    // Two strikes and the catch-up stays quiet until a run actually succeeds.
+    const strikes = meta.consecutive_light_failures ?? 0
+    if (strikes >= 2) {
+      console.error(`[catchup] ${strikes} consecutive light-refresh failures — catch-up suspended until one succeeds`)
+      return
+    }
     // Catch-up recovers MISSED nightlies — it never starts the very first run.
     // A fresh install (null timestamp) would otherwise auto-spawn a pipeline
     // run at boot; the first run must be the nightly cron or a human click.
@@ -328,12 +375,15 @@ async function catchupCheck() {
     console.error(`[catchup] check failed: ${err.message}`)
   }
 }
-setInterval(catchupCheck, 3_600_000)
+if (config.refresh.catchup_enabled === true) setInterval(catchupCheck, 3_600_000)
 
 // ---------- Boot ----------
 const { host, port } = config.server
 app.listen(port, host, () => {
   console.log(`BDR dashboard server: http://${host}:${port}`)
   recoverAndStart()
-  catchupCheck()
+  if (config.refresh.catchup_enabled === true) catchupCheck()
+  // Boot is the laptop-powered-on path: restore yesterday's state first so the
+  // once-a-day guard is honest, then try today's pull.
+  initMorningPull().then(() => runMorningPull({ trigger: 'boot' }))
 })

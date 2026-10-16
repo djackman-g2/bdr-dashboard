@@ -8,6 +8,22 @@ const CONFIDENCE_DOT = {
   low: 'bg-brand-400',
 }
 
+// An open opportunity means the account holds an AE's live deal — prospecting into
+// it steps on Sean or Nick, so it is not a working account. `open_opps` is stamped by
+// the nightly light run (Step 2b). ABSENT is deliberately NOT treated as clear: a
+// missing field means "never checked", and hiding on unknown would make accounts
+// disappear for the wrong reason. Only a non-empty array hides a row.
+const hasOpenOpp = (a) => Array.isArray(a.open_opps) && a.open_opps.length > 0
+
+const money = (n) =>
+  typeof n === 'number' ? `$${Math.round(n).toLocaleString('en-US')}` : null
+
+// Tooltip names the AE first — the point of the badge is "whose deal is this".
+const openOppTitle = (a) =>
+  a.open_opps
+    .map((o) => [o.owner, o.name, o.stage, money(o.amount), o.close_date && `closes ${o.close_date}`].filter(Boolean).join(' · '))
+    .join('\n')
+
 // "All" = the working book. Archived accounts (left the BDR universe — e.g.
 // the FY27 reassignment wave) are kept forever but only shown on their own tab.
 const STATUS_FILTERS = [
@@ -21,6 +37,7 @@ export default function AccountList({ index, query, selected, onOpen }) {
   const accounts = index?.accounts ?? []
   const [statusKey, setStatusKey] = useState('all')
   const [industry, setIndustry] = useState('')
+  const [showOpenOpps, setShowOpenOpps] = useState(false)
 
   const industries = useMemo(
     () => [...new Set(accounts.map((a) => a.industry).filter(Boolean))].sort(),
@@ -30,17 +47,28 @@ export default function AccountList({ index, query, selected, onOpen }) {
   const statusMatch = STATUS_FILTERS.find((s) => s.key === statusKey)?.match ?? (() => true)
   // Denominator for the count line: the current tab's population, so search/
   // industry narrowing reads as "x of <tab total>", never inflated by archived.
-  const baseTotal = useMemo(() => accounts.filter(statusMatch).length, [accounts, statusKey])
+  const baseTotal = useMemo(
+    () => accounts.filter((a) => statusMatch(a) && (showOpenOpps || !hasOpenOpp(a))).length,
+    [accounts, statusKey, showOpenOpps]
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     return accounts.filter(
       (a) =>
         statusMatch(a) &&
+        (showOpenOpps || !hasOpenOpp(a)) &&
         (!industry || a.industry === industry) &&
         (!q || [a.name, a.domain, a.industry, a.top_signal].filter(Boolean).some((f) => f.toLowerCase().includes(q)))
     )
-  }, [accounts, query, statusKey, industry])
+  }, [accounts, query, statusKey, industry, showOpenOpps])
+
+  // Surfaced as a count, never silent — an account vanishing with no explanation is
+  // worse than one shown with a warning on it.
+  const hiddenByOpp = useMemo(
+    () => (showOpenOpps ? 0 : accounts.filter((a) => statusMatch(a) && hasOpenOpp(a)).length),
+    [accounts, statusKey, showOpenOpps]
+  )
 
   if (!accounts.length) {
     return <p className="mt-10 text-center text-sm text-zinc-500">No accounts in the index yet.</p>
@@ -79,8 +107,20 @@ export default function AccountList({ index, query, selected, onOpen }) {
           ))}
         </select>
       </div>
-      <p className="px-3 pt-2 pb-1 text-[11px] text-zinc-500">
-        {filtered.length} of {baseTotal} account{baseTotal === 1 ? '' : 's'}
+      <p className="flex flex-wrap items-baseline gap-x-1.5 px-3 pt-2 pb-1 text-[11px] text-zinc-500">
+        <span>
+          {filtered.length} of {baseTotal} account{baseTotal === 1 ? '' : 's'}
+        </span>
+        {(hiddenByOpp > 0 || showOpenOpps) && (
+          <button
+            onClick={() => setShowOpenOpps((v) => !v)}
+            aria-pressed={showOpenOpps}
+            title="Accounts with an open opportunity belong to the AE — prospecting into them steps on Sean or Nick. Closed-Lost accounts are not hidden (winback)."
+            className="text-brand-600 underline decoration-dotted underline-offset-2 hover:text-brand-500 dark:text-brand-400"
+          >
+            {showOpenOpps ? 'hide open opps' : `${hiddenByOpp} hidden · open opp`}
+          </button>
+        )}
       </p>
       <ul>
         {filtered.map((a) => {
@@ -105,6 +145,14 @@ export default function AccountList({ index, query, selected, onOpen }) {
                   {a.status === 'archived' && (
                     <span className="shrink-0 rounded-full border border-zinc-300 px-1 text-[10px] text-zinc-500 dark:border-zinc-700">
                       archived
+                    </span>
+                  )}
+                  {hasOpenOpp(a) && (
+                    <span
+                      title={openOppTitle(a)}
+                      className="shrink-0 rounded-full border border-brand-500 px-1 text-[10px] font-medium text-brand-600 dark:text-brand-400"
+                    >
+                      open opp
                     </span>
                   )}
                   <span className="ml-auto shrink-0 text-[10px] text-zinc-500" title={a.refreshed_at}>

@@ -10,7 +10,19 @@
     "draft:due": "node scripts/draft-due-csv.js",
     "repair:account-slugs": "node scripts/repair-account-slugs.js",
     "linkedin:login": "node scripts/linkedin-login.js",
-    "linkedin:check": "node scripts/linkedin-session-check.js"
+    "linkedin:check": "node scripts/linkedin-session-check.js",
+    "groove:login": "node scripts/groove-login.js",
+    "groove:check": "node scripts/groove-session-check.js",
+    "groove:capture": "node scripts/groove-capture.js",
+    "groove": "node scripts/groove-cli.js",
+    "due:pull": "node scripts/groove-due-pull.js",
+    "dust:list": "node scripts/dust-account-list.js",
+    "refresh:book": "node scripts/refresh-book.js",
+    "draft:ab": "node scripts/draft-ab.js",
+    "draft:cost": "node scripts/draft-cost.js",
+    "validate:account": "node scripts/validate-account.js",
+    "spend": "node scripts/spend-report.js",
+    "prep:cohort": "node scripts/prep-cohort.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.111.0",

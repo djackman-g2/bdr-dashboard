@@ -113,6 +113,11 @@ export default function Storyline({ slug, serverUp }) {
         )}
         {data.created && <span className="text-xs text-zinc-500">created {formatDate(data.created)}</span>}
         {data.ae_owner && <span className="text-xs text-zinc-500">AE: {data.ae_owner}</span>}
+        {data.generated_by === 'auto-storyline-builder' && !data.reviewed && (
+          <Badge tone="amber" title="Built automatically after a deep refresh — glance over the spine, cast, and pairings before relying on it">
+            ⚡ auto-generated — not yet reviewed
+          </Badge>
+        )}
       </div>
 
       {/* Pending verification is a pre-send gate — it leads the card. */}

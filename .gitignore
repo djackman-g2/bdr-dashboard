@@ -7,6 +7,9 @@
 # cannot un-ignore a file whose parent directory is excluded.
 data/*
 !data/personas.js
+# Hand-curated Groove-name -> research-slug map. Config, not research data:
+# no contact info in it, and losing it silently un-grounds drafts.
+!data/account-aliases.json
 
 node_modules/
 dist/
@@ -17,3 +20,11 @@ dist/
 logs/
 .claude/settings.local.json
 .playwright-mcp/
+
+# Session scratch: raw CRM/Groove pulls, Playwright page snapshots, one-off
+# scripts. Contains contact data, so it stays local like data/*.
+.outreach-work/
+server/scripts/tmp-outreach/
+server/scripts/tmp-*.mjs
+/hireart-company.yml
+/li-search-*.txt

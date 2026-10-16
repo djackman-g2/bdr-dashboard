@@ -12,8 +12,9 @@
 // winback trigger without ever entering the hook text.
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { paths } from './config.js'
+import { paths, config } from './config.js'
 import { personas } from '../../data/personas.js'
+import { updateStore } from './trackerStore.js'
 
 const PLAYS_DIR = path.join(paths.dataDir, 'plays')
 
@@ -126,22 +127,32 @@ async function loadDossier(slug) {
   }
 }
 
-async function loadMirrorEntry(contact) {
+// Pure match — takes an already-parsed mirror so a batch scan can load
+// outreach.json once instead of re-reading/re-parsing it per contact.
+function matchMirrorContact(contact, mirror) {
+  return (
+    (contact.sfContactId && mirror.contacts.find((o) => o.sf_contact_id === contact.sfContactId)) ||
+    (contact.name && mirror.contacts.find((o) => o.name?.toLowerCase() === contact.name.toLowerCase())) ||
+    null
+  )
+}
+
+async function loadMirror() {
   try {
-    const mirror = JSON.parse(await fs.readFile(path.join(paths.dataDir, 'outreach.json'), 'utf8'))
-    return (
-      (contact.sfContactId && mirror.contacts.find((o) => o.sf_contact_id === contact.sfContactId)) ||
-      (contact.name && mirror.contacts.find((o) => o.name?.toLowerCase() === contact.name.toLowerCase())) ||
-      null
-    )
+    return JSON.parse(await fs.readFile(path.join(paths.dataDir, 'outreach.json'), 'utf8'))
   } catch {
     return null
   }
 }
 
-const CLOSED_LOST_RE = /closed[\s-]?lost|churn|non[\s-]?renew|did not renew|cancell|parted ways/i
+async function loadMirrorEntry(contact) {
+  const mirror = await loadMirror()
+  return mirror ? matchMirrorContact(contact, mirror) : null
+}
 
-function extractFacts({ dossier, contact, account }) {
+export const CLOSED_LOST_RE = /closed[\s-]?lost|churn|non[\s-]?renew|did not renew|cancell|parted ways/i
+
+export function extractFacts({ dossier, contact, account }) {
   const facts = { company: account?.name ?? dossier?.name ?? contact.accountId }
   if (contact.name) facts.name = contact.name
 
@@ -318,4 +329,124 @@ export async function hookAngles(contact, account) {
 
   offers.sort((a, b) => b.score - a.score)
   return { contactId: contact.id, dossier: !!dossier, offers }
+}
+
+// ---------- signals (Day tab) ----------
+// "Fresh" = an account-level fact (ai_visibility/community/closed_lost) that
+// wasn't there last time this scan acknowledged it — surfaced once per
+// distinct fact, not re-alerted on every routine aiVisibility/community
+// re-run (fingerprints deliberately exclude as_of dates). "Stuck" = a
+// contact mid-Groove-flow with no reply for long enough to be worth
+// double-tapping outside the flow. Dismissing a fresh signal is a plain
+// PATCH /api/tracker/accounts/:id with an appended signalSeen fingerprint.
+//
+// Cold-start: accounts that predate this field have no `signalSeen` at all
+// (`undefined`, never an array) — for those, the first scan silently adopts
+// whatever's currently true as the baseline instead of dumping every
+// long-standing fact as "fresh" on day one. An account created AFTER this
+// shipped starts life with `signalSeen: []` (see trackerStore.addAccount), so
+// for those a real trigger present at creation time correctly surfaces
+// immediately — that's a genuine new signal, not backlog noise.
+const ACTIVE_STATUSES = ['active', 'replied', 'meeting']
+
+export async function scanSignals(store) {
+  const mirror = await loadMirror()
+  const dossierCache = new Map()
+  const loadDossierCached = async (slug) => {
+    if (!dossierCache.has(slug)) dossierCache.set(slug, await loadDossier(slug))
+    return dossierCache.get(slug)
+  }
+
+  const activeByAccount = new Map()
+  for (const c of store.contacts) {
+    if (c.name && ACTIVE_STATUSES.includes(c.status)) {
+      activeByAccount.set(c.accountId, [...(activeByAccount.get(c.accountId) ?? []), c])
+    }
+  }
+
+  const fresh = []
+  const baselines = [] // accounts with no signalSeen field yet — seed silently
+  for (const account of store.accounts) {
+    const contacts = activeByAccount.get(account.id)
+    if (!contacts?.length) continue
+    const dossier = await loadDossierCached(account.id)
+    if (!dossier) continue
+    const facts = extractFacts({ dossier, contact: contacts[0], account })
+    const candidates = []
+    if (facts.ai_question !== undefined) {
+      candidates.push({
+        trigger: 'ai_visibility',
+        fingerprint: `appeared:${facts.ai_appeared}`,
+        why: facts.ai_appeared
+          ? 'now appears in the AI shortlist — angle flips to "who keeps you there"'
+          : `absent from the AI shortlist${facts.competitor_count ? ` (${facts.competitor_count} competitors returned)` : ''}`,
+      })
+    }
+    if (facts.thread_url) {
+      candidates.push({
+        trigger: 'community',
+        fingerprint: `thread:${facts.thread_url}`,
+        why: `new community thread: "${facts.thread_title}" (${facts.thread_source ?? 'community'})`,
+      })
+    }
+    if (CLOSED_LOST_RE.test(dossier?.salesforce?.crm_history_notes ?? '')) {
+      candidates.push({
+        trigger: 'closed_lost',
+        fingerprint: 'closed_lost',
+        why: 'CRM history shows closed-lost / non-renewal — re-engagement angle',
+      })
+    }
+    if (account.signalSeen === undefined) {
+      baselines.push({ accountId: account.id, fingerprints: candidates.map((c) => c.fingerprint) })
+      continue
+    }
+    const seen = new Set(account.signalSeen)
+    for (const c of candidates) {
+      if (seen.has(c.fingerprint)) continue
+      fresh.push({
+        accountId: account.id,
+        accountName: account.name,
+        contacts: contacts.map((c) => ({ id: c.id, name: c.name })),
+        trigger: c.trigger,
+        why: c.why,
+        fingerprint: c.fingerprint,
+      })
+    }
+  }
+
+  if (baselines.length) {
+    await updateStore((s) => {
+      for (const b of baselines) {
+        const a = s.accounts.find((a) => a.id === b.accountId)
+        if (a) a.signalSeen = b.fingerprints
+      }
+    })
+  }
+
+  const stuck = []
+  const doubleTapAfterDays = config.tracker?.double_tap_after_days ?? 5
+  if (mirror) {
+    const accountName = new Map(store.accounts.map((a) => [a.id, a.name]))
+    for (const [accountId, contacts] of activeByAccount) {
+      for (const c of contacts) {
+        const m = matchMirrorContact(c, mirror)
+        if (!m?.last_outbound || m.flow_day == null || m.replied) continue
+        const daysSince = Math.floor((Date.now() - new Date(m.last_outbound).getTime()) / 86400000)
+        if (daysSince >= doubleTapAfterDays) {
+          stuck.push({
+            contactId: c.id,
+            name: c.name,
+            accountId,
+            accountName: accountName.get(accountId) ?? accountId,
+            flow: m.flow,
+            flowDay: m.flow_day,
+            daysSince,
+          })
+        }
+      }
+    }
+  }
+  stuck.sort((a, b) => b.daysSince - a.daysSince)
+
+  return { fresh, stuck }
 }

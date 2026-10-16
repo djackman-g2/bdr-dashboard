@@ -34,12 +34,20 @@ const opt = (name) => {
   return i >= 0 ? args[i + 1] : null
 }
 if (!file) {
-  console.error('usage: npm run draft:due -- <csv path> [--dry-run] [--accounts "A,B"] [--limit N]')
+  console.error('usage: npm run draft:due -- <csv path> [--dry-run] [--accounts "A,B"] [--limit N] [--skip-drafted]')
   process.exit(1)
 }
 const DRY = flag('dry-run')
 const ONLY = opt('accounts')?.split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
 const LIMIT = opt('limit') ? parseInt(opt('limit'), 10) : Infinity
+// Top-up mode. Groove's due_today list GROWS through the day — the 7am pull is
+// a snapshot, and people whose step comes due at 10am are simply not in it
+// (verified 2026-09-04: 177 pulled at 06:46, 212 due by 09:24, and every step
+// the extra 35 sat on was already in the morning pull, so nothing was dropped
+// — they just weren't due yet). Re-running the pull later catches them, but a
+// plain re-run would also re-draft everything already done. With this flag,
+// rows that already hold a successful draft in today's day file are skipped.
+const SKIP_DRAFTED = flag('skip-drafted')
 
 const slugify = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 
@@ -135,13 +143,14 @@ try {
 
 console.log(`${path.basename(file)}: ${rows.length} due` + (DRY ? ' [DRY RUN]' : '') + ` | writes: ${useApi ? 'server API' : 'direct'}`)
 
-const targets = [] // [{row, contact}]
+let targets = [] // [{row, contact}] — reassigned by --skip-drafted below
 const today = new Date().toLocaleDateString('en-CA')
 // A person with two due steps yields two rows — resolve/create/stamp them
 // once, then reuse the contact for their later rows.
 const resolvedThisRun = new Map() // personKey → contact
 let created = 0
 let stamped = 0
+let backfilled = 0
 for (const r of rows) {
   const sfId = r['SFDC ID'] || null
   const accountId = accountByName.get(r.Account.toLowerCase()) ?? null
@@ -160,8 +169,12 @@ for (const r of rows) {
     (accountId && byNameAcct.get(`${accountId}|${r.Name.toLowerCase()}`)) ||
     null
   if (!contact) {
+    // The CSV's own Title column wins over the mirror: groove-due-pull.js now
+    // carries Groove's live title, and a person enrolled today has no mirror
+    // row at all (the SF sync predates the enrollment). Mirror stays the
+    // fallback for hand-pasted CSVs that have no Title column.
     const mirrorEntry = sfId ? mirrorBySfId.get(sfId) : null
-    const title = mirrorEntry?.title ?? null
+    const title = r.Title || mirrorEntry?.title || null
     const persona = title ? store.personaForTitle(title) : null
     let acctId = accountId
     if (!acctId) {
@@ -178,15 +191,34 @@ for (const r of rows) {
       contact = res.contact ?? res
     }
     created++
-  } else if (!DRY && (contact.nextAction !== due.nextAction || contact.nextDate !== due.nextDate)) {
-    const res = await patchContact(contact.id, due)
-    contact = res?.contact ?? res ?? contact
-    stamped++
+  } else if (!DRY) {
+    // Backfill title/persona on rows created before the CSV carried a Title
+    // (or created from a mirror that had no row yet). A tracker contact with
+    // no persona drafts without persona routing every single day until someone
+    // notices, so repair it in place the first time Groove tells us the title.
+    const patch = { ...due }
+    if (r.Title && !contact.title) {
+      patch.title = r.Title
+      const p = store.personaForTitle(r.Title)
+      if (p && !contact.persona) patch.persona = p
+      backfilled++
+    }
+    const changed =
+      contact.nextAction !== due.nextAction || contact.nextDate !== due.nextDate || patch.title !== undefined
+    if (changed) {
+      const res = await patchContact(contact.id, patch)
+      contact = res?.contact ?? res ?? contact
+      stamped++
+    }
   }
   resolvedThisRun.set(pk, contact)
   targets.push({ row: r, contact })
 }
-console.log(`resolved: ${targets.length - created} matched, ${created} created` + (DRY ? '' : ` · next step/date stamped on ${stamped + created}`))
+console.log(
+  `resolved: ${targets.length - created} matched, ${created} created` +
+    (DRY ? '' : ` · next step/date stamped on ${stamped + created}`) +
+    (backfilled ? ` · title/persona backfilled on ${backfilled}` : '')
+)
 
 if (DRY) {
   for (const { row, contact } of targets) {
@@ -196,6 +228,44 @@ if (DRY) {
 }
 
 // ---------- draft pass (sequential — one low-effort call per contact) ----------
+// Group by account before drafting (2026-09-03). draft.js puts the dossier and
+// storyline in cache_control:ephemeral system blocks with a 5-minute TTL, but
+// Groove's due list arrives in no useful order — so a ~10k-token dossier was
+// being WRITTEN to cache at 1.25x for nearly every one of ~208 daily rows and
+// almost never read back, which is strictly worse than not caching it. About
+// 71 accounts cover those rows, so grouping turns ~208 cache writes into ~71
+// writes plus ~137 reads at 0.1x. It also puts an account's colleagues
+// adjacent, which is exactly what the batchContext anti-duplicate-opener
+// guard below wants. Sorting happens before the --limit slice on purpose, so
+// a limited run takes whole accounts rather than a scattering of rows.
+targets.sort((a, b) =>
+  (a.row.Account ?? '').localeCompare(b.row.Account ?? '') ||
+  (a.row.Name ?? '').localeCompare(b.row.Name ?? '')
+)
+// Drop rows already drafted today (--skip-drafted). Read here, before the
+// sort/slice, with local names: date/jsonFile/entryKey are const-declared
+// further down, so touching them now would hit the temporal dead zone.
+if (SKIP_DRAFTED) {
+  const today = new Date().toISOString().slice(0, 10)
+  const dayFile = path.join(paths.dataDir, 'drafts', `due-${today}.json`)
+  let done = new Set()
+  try {
+    const prev = JSON.parse(await fs.readFile(dayFile, 'utf8')).drafts ?? []
+    // Only a row with a real body counts as done — an errored or terminated
+    // entry is exactly what a top-up should retry.
+    done = new Set(prev.filter((e) => e.draft?.body).map((e) => `${e.contactId}|${e.step ?? ''}`))
+  } catch {
+    /* no day file yet — nothing to skip */
+  }
+  const before = targets.length
+  targets = targets.filter((t) => !done.has(`${t.contact.id}|${t.row['Current Step'] || ''}`))
+  console.log(`--skip-drafted: ${before - targets.length} already drafted today, ${targets.length} to draft`)
+  if (!targets.length) {
+    console.log('nothing new to draft — every due row already has a draft.')
+    process.exit(0)
+  }
+}
+
 const capped = targets.slice(0, LIMIT)
 if (capped.length < targets.length) console.log(`--limit ${LIMIT}: drafting ${capped.length} of ${targets.length}`)
 console.log(`drafting ${capped.length} message(s)…`)
@@ -234,8 +304,59 @@ const rememberDraft = (account, entry) => {
   if (!historyByAccount.has(account)) historyByAccount.set(account, [])
   historyByAccount.get(account).push(summarize(entry))
 }
+
+// Opener MECHANIC, not wording: colleagues comparing inboxes clock "ran X
+// through Claude" twice however it's reworded (2026-08-12 batch: 4 ActiveOps
+// colleagues got the same shortlist-test opener, Lambda's 2 contacts got
+// identical openers — the prose-only batchContext rule wasn't enough).
+const mechanicOf = (body) => {
+  const text = (body ?? '')
+    .replace(/^\s*(hey|hi|hello)?[,\s]*[A-ZÀ-Ž][\w'’.-]*\s*[,—-]*\s*/i, '') // greeting/name
+    .replace(/\s+/g, ' ')
+    .trim()
+  const first = text.split(/(?<=[.?!])\s/)[0]?.toLowerCase() ?? ''
+  if (/\b(ran|asked|typed|put|tested|queried)\b.*\b(claude|chatgpt|an ai|ai model|llm|ai search)\b/.test(first)) return 'ran-ai-prompt'
+  if (/\bhead-to-head\b|\bvs\.?\s/.test(first)) return 'head-to-head'
+  if (/\breviews?\b.*\b(count|only|added|last|gap)\b|\bonly\b.*\breviews?\b/.test(first)) return 'review-count'
+  if (/\b(saw|congrats|noticed)\b.*\b(news|launch|raise|funding|hire|joined|announce)/.test(first)) return 'news-react'
+  // fallback: first five significant words
+  return first.split(' ').filter((w) => w.length > 2).slice(0, 5).join(' ')
+}
+const mechanicsByAccount = new Map()
+const rememberMechanic = (account, body) => {
+  if (!mechanicsByAccount.has(account)) mechanicsByAccount.set(account, new Set())
+  mechanicsByAccount.get(account).add(mechanicOf(body))
+}
+
 for (const e of prior) {
-  if (e.draft && !targetKeys.has(entryKey(e.contactId, e.step))) rememberDraft(e.account, e)
+  if (e.draft && !targetKeys.has(entryKey(e.contactId, e.step))) {
+    rememberDraft(e.account, e)
+    rememberMechanic(e.account, e.draft.body)
+  }
+}
+
+// Persist after EVERY draft (not just at the end): a killed/crashed batch
+// must never lose the rows it already paid for. Re-reads the day file fresh
+// each time so "sent" marks made from the Due page mid-batch survive.
+await fs.mkdir(outDir, { recursive: true })
+async function saveDayFile(results) {
+  let fresh = []
+  try {
+    fresh = JSON.parse(await fs.readFile(jsonFile, 'utf8')).drafts ?? []
+  } catch {
+    /* first run today */
+  }
+  const mergedMap = new Map()
+  for (const e of fresh) mergedMap.set(entryKey(e.contactId ?? e.name, e.step), e)
+  for (const r of results) mergedMap.set(entryKey(r.contactId ?? r.name, r.step), r)
+  const merged = [...mergedMap.values()]
+  const tmp = jsonFile.replace(/\.json$/, '.tmp.json')
+  await fs.writeFile(
+    tmp,
+    JSON.stringify({ date, source: path.basename(file), generated_at: new Date().toISOString(), drafts: merged }, null, 2)
+  )
+  await fs.rename(tmp, jsonFile)
+  return merged
 }
 
 const results = []
@@ -251,55 +372,73 @@ for (const { row, contact } of capped) {
   }
   const history = historyByAccount.get(row.Account) ?? []
   try {
-    const res = await fetch(`${BASE}/api/draft`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contactId: contact.id,
-        kind: 'next',
-        dueStep: row['Current Step'] || undefined,
-        batchContext: history.length ? history.slice(-10).join('\n') : undefined,
-      }),
-    })
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`)
-    let done = null
-    for (const line of (await res.text()).split('\n')) {
-      if (!line.trim()) continue
-      const evt = JSON.parse(line)
-      if (evt.type === 'done') done = evt
-      if (evt.type === 'error') throw new Error(evt.error)
+    const requestDraft = async (extraContext) => {
+      const ctx = [...history.slice(-10), ...(extraContext ? [extraContext] : [])]
+      const res = await fetch(`${BASE}/api/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactId: contact.id,
+          kind: 'next',
+          dueStep: row['Current Step'] || undefined,
+          batchContext: ctx.length ? ctx.join('\n') : undefined,
+        }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `HTTP ${res.status}`)
+      let done = null
+      for (const line of (await res.text()).split('\n')) {
+        if (!line.trim()) continue
+        const evt = JSON.parse(line)
+        if (evt.type === 'done') done = evt
+        if (evt.type === 'error') throw new Error(evt.error)
+      }
+      if (!done?.draft?.body) throw new Error('no parsed draft')
+      return done
     }
-    if (!done?.draft?.body) throw new Error('no parsed draft')
-    entry.draft = done.draft
+
+    // Token usage is summed across every call this row costs (the mechanic
+    // retry below included) so server/scripts/draft-cost.js can price a day
+    // honestly rather than by guesswork.
+    const usage = { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
+    const addUsage = (u) => {
+      if (!u) return
+      for (const k of Object.keys(usage)) usage[k] += u[k] ?? 0
+    }
+    let done = await requestDraft()
+    addUsage(done.usage)
+    let draft = done.draft
+    // Mechanic collision → one retry with the mechanic banned by name; a
+    // second collision ships flagged, never silently.
+    const used = mechanicsByAccount.get(row.Account) ?? new Set()
+    let mech = mechanicOf(draft.body)
+    if (used.has(mech)) {
+      process.stdout.write(`(opener "${mech}" already used at this account — retrying) `)
+      done = await requestDraft(
+        `REJECTED DRAFT NOTE: your previous attempt opened with the "${mech}" mechanic, which a colleague's draft at this account already uses — colleagues compare inboxes. Open this message a structurally different way (different move entirely, not a rewording).`
+      )
+      addUsage(done.usage)
+      draft = done.draft
+      mech = mechanicOf(draft.body)
+      if (used.has(mech)) {
+        draft.flag_warnings = [...(draft.flag_warnings ?? []), `opener mechanic ("${mech}") repeats a colleague's draft at this account — rewrite the opener before sending`]
+      }
+    }
+    entry.draft = draft
+    entry.usage = usage
     results.push(entry)
     rememberDraft(row.Account, entry)
-    console.log(`✓ ${done.draft.play} (${done.draft.channel})${done.draft.flag_warnings?.length ? ` ⚑${done.draft.flag_warnings.length}` : ''}`)
+    rememberMechanic(row.Account, draft.body)
+    console.log(`✓ ${draft.play} (${draft.channel})${draft.flag_warnings?.length ? ` ⚑${draft.flag_warnings.length}` : ''}`)
   } catch (err) {
     entry.error = err.message
     results.push(entry)
     console.log(`✗ ${err.message}`)
   }
+  await saveDayFile(results)
 }
 
 // ---------- write outputs (merge into the day file — partial re-runs keep the rest) ----------
-await fs.mkdir(outDir, { recursive: true })
-// Re-read the day file fresh: "sent" marks made from the Due page while this
-// batch ran must survive the write. Rows re-drafted this run start unsent.
-let fresh = prior
-try {
-  fresh = JSON.parse(await fs.readFile(jsonFile, 'utf8')).drafts ?? []
-} catch {
-  /* first run today */
-}
-const mergedMap = new Map()
-for (const e of fresh) mergedMap.set(entryKey(e.contactId ?? e.name, e.step), e)
-for (const r of results) mergedMap.set(entryKey(r.contactId ?? r.name, r.step), r)
-const merged = [...mergedMap.values()]
-
-await fs.writeFile(
-  jsonFile,
-  JSON.stringify({ date, source: path.basename(file), generated_at: new Date().toISOString(), drafts: merged }, null, 2)
-)
+const merged = await saveDayFile(results)
 
 const ok = merged.filter((r) => r.draft)
 const failed = merged.filter((r) => r.error)

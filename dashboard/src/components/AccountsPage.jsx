@@ -15,6 +15,7 @@ import {
 } from '../lib/tracker.js'
 import { relativeTime } from '../lib/format.js'
 import AutoGrowTextarea from './AutoGrowTextarea.jsx'
+import Scorecard from './Scorecard.jsx'
 
 export function CopyBtn({ text, label = 'copy' }) {
   const [copied, setCopied] = useState(false)
@@ -57,7 +58,7 @@ function DraftPanel({ contact, accountName, onClose }) {
   }, [contact.id, kind])
 
   const d = state.draft
-  const field = (label, subject, body) => (
+  const field = (label, subject, body, scorecard) => (
     <div className="rounded border border-zinc-200 p-2 dark:border-zinc-800">
       <div className="flex items-center gap-2">
         <span className="text-xs font-semibold tracking-wide text-zinc-500 uppercase">{label}</span>
@@ -70,6 +71,7 @@ function DraftPanel({ contact, accountName, onClose }) {
         <CopyBtn text={body} label="copy body" />
       </div>
       <p className="mt-1 text-sm whitespace-pre-wrap">{body}</p>
+      <Scorecard s={scorecard} />
     </div>
   )
 
@@ -146,10 +148,10 @@ function DraftPanel({ contact, accountName, onClose }) {
               </span>{' '}
               {d.rationale}
             </p>
-            {(d.emails ?? []).map((e) => field(e.slot, e.subject, e.body))}
-            {d.linkedin_inmail && field('linkedin inmail', null, d.linkedin_inmail)}
+            {(d.emails ?? []).map((e) => field(e.slot, e.subject, e.body, e.scorecard))}
+            {d.linkedin_inmail && field('linkedin inmail', null, d.linkedin_inmail, d.linkedin_scorecard)}
             {d.call_points?.length > 0 && field('call points', null, d.call_points.map((p) => `• ${p}`).join('\n'))}
-            {d.channel && field(d.channel + (d.subject ? '' : ' message'), d.subject ?? null, d.body ?? '')}
+            {d.channel && field(d.channel + (d.subject ? '' : ' message'), d.subject ?? null, d.body ?? '', d.scorecard)}
             <p className="text-[10px] text-zinc-400">
               Drafts are suggestions — read before sending; stats are limited to the canonical library. Regenerate by toggling pack/next.
             </p>
@@ -425,6 +427,19 @@ function ContactRow({ c, o, personas, statuses, busy, onPatch, onDelete, targete
           className={`ml-0.5 ${c.watch ? 'text-warning-500' : 'text-zinc-300 hover:text-warning-500 dark:text-zinc-600'}`}
         >
           {c.watch ? '★' : '☆'}
+        </button>
+        <button
+          onClick={() => onPatch(c.id, { connected: !c.connected })}
+          disabled={busy}
+          title={
+            c.connected
+              ? 'Connected on LinkedIn — drafts use a voice-note/video ask instead of a text DM. Click to unset.'
+              : 'Mark connected on LinkedIn — switches InMail/LinkedIn drafts to a voice-note/video ask'
+          }
+          aria-label={c.connected ? 'Unmark LinkedIn connected' : 'Mark LinkedIn connected'}
+          className={`ml-0.5 ${c.connected ? 'text-primary-600 dark:text-primary-400' : 'text-zinc-300 hover:text-primary-500 dark:text-zinc-600'}`}
+        >
+          🔗
         </button>
       </td>
       <td className="min-w-32 py-1 pr-2">
@@ -958,7 +973,7 @@ export default function AccountsPage({ tracker, index, outreach, busy, mutate, n
   const accounts = [...tracker.accounts].sort((a, b) => a.name.localeCompare(b.name))
 
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="w-full">
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-xl font-bold tracking-tight">Accounts</h1>
         <p className="text-sm text-zinc-500">

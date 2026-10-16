@@ -4,7 +4,13 @@
 // a real hook. Committed (config, no account data) — see .gitignore carve-out.
 export const personas = {
   marketing: {
-    titles: ['CMO', 'VP Marketing', 'Demand Gen', 'Growth', 'Brand', 'Product Marketing'],
+    // The bare 'Marketing' / 'SEO' / 'Communications' / 'Content' needles are
+    // last-resort catch-alls — safe only because `marketing` is matched LAST in
+    // PERSONA_MATCH_ORDER, so "Customer Marketing" still lands on
+    // customerSuccess and "Product Marketing" on productMarketing. They exist
+    // because real Groove titles ("Head of Marketing", "Senior Director of
+    // Marketing", "Global Head, SEO") matched nothing and drafted hookless.
+    titles: ['CMO', 'Chief Marketing Officer', 'VP Marketing', 'Demand Gen', 'Growth', 'Brand', 'Product Marketing', 'Marketing Operations', 'Digital Marketing', 'Marketing Content', 'Marketing', 'SEO', 'Communications', 'Content'],
     wants: 'pipeline they can attribute, in-market accounts, category authority',
     g2Value:
       'Buyer Intent — see which target accounts are researching your category right now; Review velocity to win the Grid; AEO so you show up when buyers ask AI tools for a shortlist',
@@ -22,7 +28,7 @@ export const personas = {
     proofToPull: 'competitive comparison data, review sentiment themes, category movement',
   },
   customerSuccess: {
-    titles: ['CS', 'Customer Success', 'VP CS', 'Retention', 'Customer Marketing'],
+    titles: ['CS', 'Customer Success', 'VP CS', 'Retention', 'Customer Marketing', 'Customer Experience', 'Customer Delivery'],
     wants: 'reduce churn, prove value, mobilize advocates, references',
     g2Value:
       'Turn happy customers into reviews that feed the flywheel; catch at-risk sentiment early; source references on demand',
@@ -40,7 +46,10 @@ export const personas = {
     proofToPull: 'competitor review pain points, feature-mention frequency, category feature trends',
   },
   sales: {
-    titles: ['VP Sales', 'CRO', 'Sales Director', 'RevOps', 'Sales Enablement'],
+    // 'Sales' / 'Revenue Operations' / 'Partnerships' are the same kind of
+    // last-resort needle as marketing's — `sales` sits below the specific
+    // personas, so "Sales Enablement" and "Customer Success" keep their homes.
+    titles: ['VP Sales', 'CRO', 'Chief Revenue', 'Sales Director', 'RevOps', 'Sales Enablement', 'Business Development', 'GTM', 'Sales', 'Revenue Operations', 'Partnerships'],
     wants: 'more qualified pipeline, faster cycles, competitive win rates',
     g2Value:
       'Buyer Intent surfaces in-market accounts for reps; reviews as social proof in deals; competitive battlecards from real buyer comparisons',
@@ -49,7 +58,7 @@ export const personas = {
     proofToPull: 'intent signal volume in their ICP, competitive comparison frequency',
   },
   executive: {
-    titles: ['CEO', 'Founder', 'COO', 'President', 'GM'],
+    titles: ['CEO', 'Founder', 'COO', 'President', 'GM', 'Chief Executive', 'Chief Operating'],
     wants: 'category leadership, efficient growth, market perception',
     g2Value:
       'Own your category narrative; AI tools cite G2 first when buyers ask for recommendations — absence there = invisible in the AI buying journey',

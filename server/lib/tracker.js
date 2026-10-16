@@ -16,7 +16,7 @@ import {
   removeContact,
   watchContact,
 } from './trackerStore.js'
-import { hookAngles } from './plays.js'
+import { hookAngles, scanSignals } from './plays.js'
 
 export const trackerRouter = express.Router()
 
@@ -34,9 +34,9 @@ trackerRouter.get('/', async (_req, res) => {
 })
 
 trackerRouter.post('/activity', async (req, res) => {
-  const { type, outcome, contactId } = req.body ?? {}
+  const { type, contactId } = req.body ?? {}
   try {
-    const activity = await logActivity({ type, outcome, contactId })
+    const activity = await logActivity({ type, contactId })
     res.status(201).json(await withSummary({ activity }))
   } catch (err) {
     fail(res, err)
@@ -50,6 +50,20 @@ trackerRouter.delete('/activity/:id', async (req, res) => {
     res.json(await withSummary({ removed }))
   } catch (err) {
     fail(res, err)
+  }
+})
+
+// Day-tab signals: fresh account-level triggers (ai_visibility/community/
+// closed_lost) not yet acknowledged, plus contacts stuck mid-flow long enough
+// to be worth a double-tap. Dismissing a fresh signal is a plain PATCH
+// /accounts/:id with an appended signalSeen fingerprint (below); the only
+// other write this does is silently seeding a baseline for accounts that
+// predate the signalSeen field (see plays.js scanSignals).
+trackerRouter.get('/signals', async (_req, res) => {
+  try {
+    res.json(await scanSignals(await readStore()))
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 

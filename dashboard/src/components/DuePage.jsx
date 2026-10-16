@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CopyBtn } from './AccountsPage.jsx'
+import Scorecard from './Scorecard.jsx'
 
 // Due page — the morning batch desk. Upload the Groove flow due-list export
 // (Name,Email,SFDC ID,Account,Current Step) and the server drafts one
@@ -85,6 +86,7 @@ function DraftCard({ r, onMark, busy }) {
             </p>
             <CopyBtn text={r.draft.body} label="copy body" />
           </div>
+          <Scorecard s={r.draft.scorecard} />
         </div>
       )}
     </div>
@@ -186,7 +188,7 @@ export default function DuePage() {
   const today = new Date().toLocaleDateString('en-CA')
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="w-full space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-bold">Due today</h2>
         <span className="grow" />

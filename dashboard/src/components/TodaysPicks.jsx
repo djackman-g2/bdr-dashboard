@@ -1,7 +1,11 @@
 import { relativeTime } from '../lib/format.js'
 
 const TIER_LABEL = {
-  open_opp: { text: 'open opp', cls: 'border-success-300 bg-success-100 text-success-700 dark:border-success-700 dark:bg-success-900/60 dark:text-success-300' },
+  // Retired 2026-08-18: open-opp accounts are excluded from candidacy, so the nightly no
+  // longer emits this tier. Kept only so a stale suggestions.json still renders — and
+  // restyled from green to a warning, because if one ever appears it means "the AE owns
+  // this, don't touch it", which the old success-green read as the exact opposite.
+  open_opp: { text: "AE's deal — skip", cls: 'border-warning-300 bg-warning-100 text-warning-700 dark:border-warning-700 dark:bg-warning-950/60 dark:text-warning-300' },
   stage_purchase: { text: 'purchase stage', cls: 'border-brand-300 bg-brand-100 text-brand-700 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
   stage_decision: { text: 'decision stage', cls: 'border-brand-300 bg-brand-100 text-brand-700 dark:border-brand-700 dark:bg-brand-950/60 dark:text-brand-300' },
   intent_6sense: { text: '6sense intent', cls: 'border-primary-300 bg-primary-100 text-primary-700 dark:border-primary-700 dark:bg-primary-950/60 dark:text-primary-300' },

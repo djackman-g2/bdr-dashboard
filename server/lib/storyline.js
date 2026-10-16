@@ -11,6 +11,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { paths } from './config.js'
 import { readStore } from './trackerStore.js'
+import { resolveIndexSlug } from './accountSlug.js'
 
 async function readStorylineFile(slug) {
   const file = path.join(paths.accountsDir, `${slug}.storyline.json`)
@@ -30,13 +31,8 @@ async function readStorylineFile(slug) {
 export async function loadStoryline(slug, accountName) {
   const direct = await readStorylineFile(slug)
   if (direct || !accountName) return direct
-  try {
-    const index = JSON.parse(await fs.readFile(path.join(paths.dataDir, 'index.json'), 'utf8'))
-    const hit = (index.accounts ?? []).find((a) => a.name?.toLowerCase() === accountName.toLowerCase())
-    return hit?.slug ? await readStorylineFile(hit.slug) : null
-  } catch {
-    return null
-  }
+  const indexSlug = await resolveIndexSlug(accountName)
+  return indexSlug ? await readStorylineFile(indexSlug) : null
 }
 
 // GET /api/storyline/:accountId — read-only. accountId is either a research

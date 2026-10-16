@@ -204,8 +204,7 @@ export default function App() {
       .finally(() => setTrackerBusy(false))
   }, [])
   const trackerLog = useCallback(
-    (type, outcome, contactId) =>
-      trackerMutate(logActivity({ type, ...(outcome ? { outcome } : {}), ...(contactId ? { contactId } : {}) })),
+    (type, contactId) => trackerMutate(logActivity({ type, ...(contactId ? { contactId } : {}) })),
     [trackerMutate]
   )
   const trackerUndo = useCallback((id) => trackerMutate(undoActivity(id)), [trackerMutate])
@@ -312,7 +311,7 @@ export default function App() {
         {[
           ['due', 'Due'],
           ['day', 'Day'],
-          ['activity', 'Activity'],
+          ['activity', 'Hotlist'],
           ['accounts', 'Accounts'],
         ].map(([v, label]) => (
           <button
@@ -426,7 +425,7 @@ export default function App() {
               />
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">
-                Activity tracking needs the local server — it's offline (read-only mode).
+                The hotlist needs the local server — it's offline (read-only mode).
               </p>
             ))}
 
@@ -452,7 +451,7 @@ export default function App() {
 
           {view === 'day' &&
             (serverUp ? (
-              <DayPage tracker={tracker} targetId={targetId} onTarget={onTarget} />
+              <DayPage tracker={tracker} targetId={targetId} onTarget={onTarget} busy={trackerBusy} mutate={trackerMutate} />
             ) : (
               <p className="mt-10 text-center text-sm text-zinc-500">
                 The daily view needs the local server — it's offline (read-only mode).
